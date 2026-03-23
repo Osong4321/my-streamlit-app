@@ -97,8 +97,8 @@ with st.sidebar:
         "이동할 페이지를 선택하세요:", 
         [
             "🏠 홈 (Home)", 
-            "📊 대시보드 (Dashboard)", 
             "📅 시험 일정 관리", 
+            "📊 대시보드 (Dashboard)", 
             "📝 공정 기록 등록",      
             "🛠️ 공정별 일정 현황",     
             "🗣️ 방명록 (Guestbook)"
@@ -134,106 +134,102 @@ if menu == "🏠 홈 (Home)":
 
 elif menu == "📊 대시보드 (Dashboard)":
     st.title("📊 시험 일정 현황 대시보드")
+
+    # 1. 📅 실시간 날짜 계산 (기본값 설정)
+    today = datetime.now().date()
+    seven_days_later = today + timedelta(days=7)
     
-    # CSV 변수 대신 구글 시트 변수(ws_schedule)로 변경
+    # 2. 날짜 및 검색 필터 (상단에 통합)
+    col1, col2, col3 = st.columns([1, 1, 2])
+    with col1:
+        start_date = st.date_input("조회 시작일", value=today)
+    with col2:
+        end_date = st.date_input("조회 종료일", value=seven_days_later)
+    with col3:
+        batch_keyword = st.text_input("Batch No. 검색", placeholder="예: MFT031 (비워두면 전체 조회)")
+
+    # 3. 데이터 로드 및 필터링
     df_schedule = load_data(ws_schedule)
     
     if not df_schedule.empty:
-        m1, m2, m3, m4 = st.columns(4)
-        total_cnt = len(df_schedule)
-        ing_cnt = len(df_schedule[df_schedule['진행여부'] == "진행 중"])
-        done_cnt = len(df_schedule[df_schedule['진행여부'] == "완료"])
-        over_cnt = len(df_schedule[df_schedule['기한상태'].str.contains("초과", na=False)])
+        # 날짜 형식 변환 및 필터링 준비
+        df_schedule['Start'] = pd.to_datetime(df_schedule['시험시작일'], errors='coerce')
+        df_schedule['End'] = pd.to_datetime(df_schedule['예상종료일'], errors='coerce')
+        df_schedule['Deadline'] = pd.to_datetime(df_schedule['마감기한'], errors='coerce')
         
-        m1.metric("전체 시험", f"{total_cnt}건")
+        # [핵심] 선택한 날짜 범위 내의 데이터만 필터링
+        # 시작일이 조회종료일보다 작고, 종료일이 조회시작일보다 큰 데이터 (기간 중첩)
+        mask = (df_schedule['Start'].dt.date <= end_date) & (df_schedule['End'].dt.date >= start_date)
+        display_df = df_schedule[mask].copy()
+
+        # Batch No. 검색 필터 적용
+        if batch_keyword:
+            display_df = display_df[display_df['Batch No.'].astype(str).str.contains(batch_keyword, case=False, na=False)]
+
+        # 4. 상단 메트릭 (필터링된 결과 기준)
+        m1, m2, m3, m4 = st.columns(4)
+        total_cnt = len(display_df)
+        ing_cnt = len(display_df[display_df['진행여부'] == "진행 중"])
+        done_cnt = len(display_df[display_df['진행여부'] == "완료"])
+        over_cnt = len(display_df[display_df['기한상태'].str.contains("초과", na=False)])
+        
+        m1.metric("조회 기간 내 시험", f"{total_cnt}건")
         m2.metric("진행 중 🟢", f"{ing_cnt}건")
         m3.metric("완료 🔵", f"{done_cnt}건")
-        m4.metric("기한 초과 🔴", f"{over_cnt}건", delta=f"-{over_cnt}", delta_color="inverse")
+        m4.metric("기한 초과 🔴", f"{over_cnt}건")
         
         st.write("---")
         st.subheader("📅 한눈에 보는 시험 일정표")
         
-        chart_df = df_schedule[['Batch No.', '시험항목', '시험시작일', '예상종료일', '마감기한']].copy()
-        chart_df['Start'] = pd.to_datetime(chart_df['시험시작일'], errors='coerce')
-        chart_df['End'] = pd.to_datetime(chart_df['예상종료일'], errors='coerce')
-        chart_df['Deadline'] = pd.to_datetime(chart_df['마감기한'], errors='coerce')
-        
-        valid_df = chart_df.dropna(subset=['Start', 'Deadline'], how='all')
-        
-        if valid_df.empty:
-            st.info("📊 데이터에 유효한 날짜(시작일 또는 마감기한)가 없습니다.")
+        if display_df.empty:
+            st.info("📊 선택한 기간 내에 해당하는 시험 일정이 없습니다.")
         else:
-            all_dates = pd.concat([valid_df['Start'], valid_df['End'], valid_df['Deadline']])
-            default_min = all_dates.min() if not all_dates.dropna().empty else datetime.today()
-            default_max = all_dates.max() if not all_dates.dropna().empty else datetime.today() + timedelta(days=30)
-
-            col_date1, col_date2, col_search = st.columns([1, 1, 2])
-            with col_date1: start_pick = st.date_input("조회 시작일", default_min)
-            with col_date2: end_pick = st.date_input("조회 종료일", default_max)
-            with col_search:
-                batch_keyword = st.text_input("Batch No. 검색 (단어 포함)", placeholder="예: MFT031 (비워두면 전체 조회)")
-
-            if batch_keyword:
-                valid_df = valid_df[valid_df['Batch No.'].astype(str).str.contains(batch_keyword, case=False, na=False)]
-
-            if start_pick > end_pick:
-                st.error("시작일이 종료일보다 늦을 수 없습니다.")
-            else:
-                try:
-                    date_range = pd.date_range(start=start_pick, end=end_pick)
-                    date_strs = [d.strftime('%m/%d') for d in date_range] 
-                    grid_data = []
+            # 5. 그리드 차트 생성 로직
+            try:
+                date_range = pd.date_range(start=start_date, end=end_date)
+                date_strs = [d.strftime('%m/%d') for d in date_range] 
+                grid_data = []
+                
+                for idx, row in display_df.iterrows():
+                    display_name = f"{row['Batch No.']} ({row['시험항목']})"
+                    row_data = {'시험 정보': display_name}
+                    is_empty_row = True 
                     
-                    for idx, row in valid_df.iterrows():
-                        has_start = pd.notna(row['Start'])
-                        has_deadline = pd.notna(row['Deadline'])
-                        in_range = False
+                    for d_idx, single_date in enumerate(date_range):
+                        date_str = date_strs[d_idx]
+                        cell_val = ""
+                        curr_d = single_date.date()
                         
-                        if has_start and row['Start'].date() <= end_pick and (pd.isna(row['End']) or row['End'].date() >= start_pick):
-                            in_range = True
-                        elif has_deadline and start_pick <= row['Deadline'].date() <= end_pick:
-                            in_range = True
-
-                        if in_range:
-                            display_name = f"{row['Batch No.']} ({row['시험항목']})"
-                            row_data = {'시험 정보': display_name}
-                            is_empty_row = True 
+                        # 마감 표시
+                        if pd.notna(row['Deadline']) and curr_d == row['Deadline'].date():
+                            cell_val = "마감"
+                            is_empty_row = False
+                        # 진행 기간 표시
+                        elif pd.notna(row['Start']) and pd.notna(row['End']) and row['Start'].date() <= curr_d <= row['End'].date():
+                            cell_val = f"진행_{row['시험항목']}"
+                            is_empty_row = False
                             
-                            for d_idx, single_date in enumerate(date_range):
-                                date_str = date_strs[d_idx]
-                                cell_val = ""
-                                curr_d = single_date.date()
-                                
-                                if has_deadline and curr_d == row['Deadline'].date():
-                                    cell_val = "마감"
-                                    is_empty_row = False
-                                elif has_start and pd.notna(row['End']) and row['Start'].date() <= curr_d <= row['End'].date():
-                                    cell_val = f"진행_{row['시험항목']}"
-                                    is_empty_row = False
-                                    
-                                row_data[date_str] = cell_val
-                            
-                            if not is_empty_row:
-                                grid_data.append(row_data)
+                        row_data[date_str] = cell_val
                     
-                    if not grid_data:
-                        st.warning("선택한 기간 내에 표시할 일정이 없습니다.")
-                    else:
-                        grid_df = pd.DataFrame(grid_data).set_index('시험 정보')
-                        
-                        def color_cells(val):
-                            if "진행_무균시험" in val: return 'background-color: #FFFF00; color: #FFFF00;'
-                            elif "진행_엔도톡신" in val: return 'background-color: #C1E1C1; color: #C1E1C1;'
-                            elif "진행" in val: return 'background-color: #E0E0E0; color: #E0E0E0;'
-                            elif val == "마감": return 'background-color: #FF4B4B; color: #FFFFFF; font-weight: bold; text-align: center;' 
-                            return ''
-                        
-                        styled_grid = grid_df.style.map(color_cells) if hasattr(grid_df.style, 'map') else grid_df.style.applymap(color_cells)
-                        st.dataframe(styled_grid, use_container_width=True)
-                        st.caption("🟡 노란색: 무균시험 | 🟢 연한 초록색: 엔도톡신시험 | 🔴 빨간색: 마감기한")
-                        
-                except Exception as e:
-                    st.error(f"대시보드를 구성하는 중 오류가 발생했습니다: {e}")
+                    if not is_empty_row:
+                        grid_data.append(row_data)
+                
+                if grid_data:
+                    grid_df = pd.DataFrame(grid_data).set_index('시험 정보')
+                    
+                    def color_cells(val):
+                        if "진행_무균시험" in val: return 'background-color: #FFFF00; color: #FFFF00;'
+                        elif "진행_엔도톡신" in val: return 'background-color: #C1E1C1; color: #C1E1C1;'
+                        elif "진행" in val: return 'background-color: #E0E0E0; color: #E0E0E0;'
+                        elif val == "마감": return 'background-color: #FF4B4B; color: #FFFFFF; font-weight: bold; text-align: center;' 
+                        return ''
+                    
+                    styled_grid = grid_df.style.map(color_cells)
+                    st.dataframe(styled_grid, use_container_width=True)
+                    st.caption("🟡 노란색: 무균시험 | 🟢 연한 초록색: 엔도톡신시험 | 🔴 빨간색: 마감기한")
+            
+            except Exception as e:
+                st.error(f"일정표를 구성하는 중 오류가 발생했습니다: {e}")
                 
 elif menu == "📅 시험 일정 관리":
     st.title("📅 시험 일정 자동 계산 및 기록")
@@ -349,7 +345,7 @@ elif menu == "📅 시험 일정 관리":
 elif menu == "📝 공정 기록 등록":
     st.title("📝 공정별 작업 시간 기록")
     tab1, tab2 = st.tabs(["✨ 신규 등록", "🛠️ 기록 수정/삭제"])
-
+    
     with tab1:
         with st.form("process_form"):
             col1, col2 = st.columns(2)
@@ -427,46 +423,49 @@ elif menu == "🛠️ 공정별 일정 현황":
     st.title("🛠️ 공정별 통합 일정 현황")
     st.write("---")
 
+    # 1. 📅 실시간 날짜 계산 (기본값: 오늘 ~ 7일 뒤)
+    today = datetime.now().date()
+    seven_days_later = today + timedelta(days=7)
+
+    # 2. 데이터 미리 로드 (검색 목록 생성용)
     df_p = load_data(ws_process) 
     
     if df_p.empty:
         st.info("등록된 공정 기록이 없습니다. '공정 기록 등록' 메뉴에서 먼저 작성해주세요.")
     else:
-        st.subheader("🕵️‍♂️ 기간 및 배치별 일정 조회")
-        
-        # 🟢 기준 배치(E07447)만 추출하는 함수 (검색 목록을 만들기 위해 위로 끌어올림)
+        # 배치 ID 추출 함수
         def get_base_id(batch_no):
             for suffix in ["A", "B", "C", "D", "E"]:
-                if str(batch_no).endswith(suffix):
-                    return batch_no[:-1]
+                if str(batch_no).endswith(suffix): return batch_no[:-1]
             return batch_no
 
-        # 🟢 전체 기준 배치 목록 (E07447, E07448 등)
         all_unique_bases = sorted(df_p['Batch No.'].apply(get_base_id).unique())
 
-        # 전체 데이터의 날짜 범위 추출
-        all_dates = pd.to_datetime(df_p['시작시간'], errors='coerce').dt.date.dropna().tolist() + \
-                    pd.to_datetime(df_p['종료시간'], errors='coerce').dt.date.dropna().tolist()
-        min_date = min(all_dates) if all_dates else datetime.today().date()
-        max_date = max(all_dates) if all_dates else datetime.today().date()
+        # 3. 🔍 통합 검색 바 (날짜 2칸 + 배치검색 2칸 비율)
+        st.subheader("🕵️‍♂️ 기간 및 배치별 일정 조회")
+        col_d1, col_d2, col_search = st.columns([1, 1, 2])
         
-        # 🟢 날짜(1:1)와 검색창(2) 비율로 3칸 분할 (검색창 부활!)
-        col_date1, col_date2, col_search = st.columns([1, 1, 2])
-        with col_date1: v_start = st.date_input("조회 시작일", min_date - timedelta(days=1))
-        with col_date2: v_end = st.date_input("조회 종료일", max_date + timedelta(days=2))
+        with col_d1:
+            # 변수명을 search_start로 통일
+            search_start = st.date_input("조회 시작일", value=today, key="proc_start_date")
+        with col_d2:
+            # 변수명을 search_end로 통일
+            search_end = st.date_input("조회 종료일", value=seven_days_later, key="proc_end_date")
         with col_search:
             search_batches = st.multiselect(
                 "Batch No. 검색 (비워두면 전체 조회)", 
                 options=all_unique_bases,
-                placeholder="배치 번호를 선택하거나 입력하세요"
+                placeholder="배치 번호 선택/입력"
             )
-        
-        if v_start > v_end:
+
+        # 4. 조회 로직 시작
+        if search_start > search_end:
             st.error("시작일이 종료일보다 늦을 수 없습니다.")
         else:
-            display_dates = pd.date_range(v_start, v_end).date
+            # 선택된 날짜 범위를 기반으로 차트 날짜 생성
+            display_dates = pd.date_range(search_start, search_end).date
             
-            # 🟢 검색창에서 선택한 배치가 있으면 그것만, 없으면 전체 다 보여주기
+            # 검색 필터링
             target_base_batches = search_batches if search_batches else all_unique_bases
             
             fixed_processes = [
@@ -476,11 +475,12 @@ elif menu == "🛠️ 공정별 일정 현황":
             
             table_rows = []
             
-            # 🟢 필터링된 배치(target_base_batches)에 대해서만 표 생성
+            # 🟢 필터링된 배치에 대해서만 데이터 생성
             for base_batch in target_base_batches:
                 for proc_display_name in fixed_processes:
                     row_data = {"Batch No.": base_batch, "공정명": proc_display_name}
                     
+                    # 용제부충전 분기 처리
                     if "용제부충전" in proc_display_name:
                         suffix = proc_display_name.replace("용제부충전", "")
                         stored_batch_no = base_batch + suffix
@@ -488,52 +488,46 @@ elif menu == "🛠️ 공정별 일정 현황":
                     else:
                         target = df_p[(df_p['Batch No.'] == base_batch) & (df_p['공정명'] == proc_display_name)]
                     
+                    # 선택된 기간 내 데이터가 있는지 확인
+                    has_data_in_range = False
                     for d in display_dates:
                         col_name = d.strftime('%m/%d')
                         val = ""
-                        curr_date = d
-                        
                         if not target.empty:
                             for _, r in target.iterrows():
                                 try:
                                     s_dt = pd.to_datetime(r['시작시간'])
                                     e_dt = pd.to_datetime(r['종료시간'])
-                                    
-                                    if s_dt.date() <= curr_date <= e_dt.date():
-                                        if s_dt.date() == e_dt.date() == curr_date: 
-                                            val = f"{s_dt.strftime('%H:%M')}~{e_dt.strftime('%H:%M')}"
-                                        elif curr_date == s_dt.date(): 
-                                            val = f"{s_dt.strftime('%H:%M')}~"
-                                        elif curr_date == e_dt.date(): 
-                                            val = f"~{e_dt.strftime('%H:%M')}"
-                                        else: 
-                                            val = " " 
-                                except:
-                                    continue
-                                    
+                                    if s_dt.date() <= d <= e_dt.date():
+                                        has_data_in_range = True
+                                        if s_dt.date() == e_dt.date() == d: val = f"{s_dt.strftime('%H:%M')}~{e_dt.strftime('%H:%M')}"
+                                        elif d == s_dt.date(): val = f"{s_dt.strftime('%H:%M')}~"
+                                        elif d == e_dt.date(): val = f"~{e_dt.strftime('%H:%M')}"
+                                        else: val = " " 
+                                except: continue
                         row_data[col_name] = val
-                            
+                    
                     table_rows.append(row_data)
 
-            wide_df = pd.DataFrame(table_rows).set_index(['Batch No.', '공정명'])
+            # 5. 테이블 출력
+            if not table_rows:
+                st.warning("조회 범위 내에 데이터가 없습니다.")
+            else:
+                wide_df = pd.DataFrame(table_rows).set_index(['Batch No.', '공정명'])
 
-            def color_logic(v):
-                if v and str(v).strip() != "": 
-                    return 'background-color: #FFFF00; color: black; border: 1px solid #ddd; font-weight: bold; text-align: center;'
-                elif v == " ": 
-                    return 'background-color: #FFFF00; border: 1px solid #ddd;'
-                return 'border: 1px solid #ddd; color: transparent;'
+                def color_logic(v):
+                    if v and str(v).strip() != "": 
+                        return 'background-color: #FFFF00; color: black; border: 1px solid #ddd; font-weight: bold; text-align: center;'
+                    elif v == " ": 
+                        return 'background-color: #FFFF00; border: 1px solid #ddd;'
+                    return 'border: 1px solid #ddd; color: transparent;'
 
-            try:
                 styled_wide_df = wide_df.style.map(color_logic)
-            except:
-                styled_wide_df = wide_df.style.applymap(color_logic)
 
-            st.divider()
-            st.subheader("📋 통합 공정현황 차트")
-            if search_batches:
-                st.caption(f"🔍 검색된 배치: {', '.join(search_batches)}")
-            st.dataframe(styled_wide_df, use_container_width=True)
+                st.divider()
+                st.subheader("📋 통합 공정현황 차트")
+                st.dataframe(styled_wide_df, use_container_width=True)
+                st.caption("🟡 노란색 표시: 해당 일자에 공정 진행됨")
 
 elif menu == "🗣️ 방명록 (Guestbook)":
     st.title("ATLAS 방명록 (비밀글 지원)")
