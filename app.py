@@ -315,7 +315,7 @@ if menu == "📅 시험 일정 관리":
     cols_order = ["Batch No.", "시험자", "시험검체", "시험항목", "진행여부", "시험지시일", "시험시작일", "추가배양", "예상종료일", "마감기한", "기한상태", "QCT"]
 
     with tab1:
-        st.subheader("🔍 조건별 일정 검색")
+        st.subheader("🔍 일정 검색 및 개별 항목 비교 분석")
         
         # 1. 데이터 불러오기 및 자동 계산
         df_raw = load_data(ws_schedule)
@@ -323,52 +323,69 @@ if menu == "📅 시험 일정 관리":
         if not df_raw.empty:
             df_raw.columns = [c.strip() for c in df_raw.columns]
             
-            # [자동 계산] 로딩 즉시 QCT 계산
+            # [자동 계산 엔진]
             t_end = pd.to_datetime(df_raw['예상종료일'], errors='coerce')
             t_inst = pd.to_datetime(df_raw['시험지시일'], errors='coerce')
             df_raw['QCT'] = (t_end - t_inst).dt.days.fillna(0).astype(int)
             
-            # 2. 검색 필터 UI
+            # 2. 1차 필터링 (키워드 및 날짜)
             s_col1, s_col2 = st.columns([1, 2])
             with s_col1:
                 search_keyword = st.text_input("Batch No. 검색", placeholder="예: LP24001", key="search_bar")
             with s_col2:
                 filter_dates = st.date_input("기간 조회 (지시일 기준)", value=[], key="date_filter")
             
-            # 3. 데이터 필터링
             actual_cols = [c for c in cols_order if c in df_raw.columns]
-            df_display = df_raw[actual_cols].copy()
+            df_filtered = df_raw[actual_cols].copy()
             
             if search_keyword:
-                df_display = df_display[df_display['Batch No.'].astype(str).str.contains(search_keyword, case=False, na=False)]
+                df_filtered = df_filtered[df_filtered['Batch No.'].astype(str).str.contains(search_keyword, case=False, na=False)]
             
             if len(filter_dates) == 2:
-                df_display['지시일_dt'] = pd.to_datetime(df_display['시험지시일'], errors='coerce')
+                df_filtered['지시일_dt'] = pd.to_datetime(df_filtered['시험지시일'], errors='coerce')
                 s_dt, e_dt = filter_dates
-                mask = (df_display['지시일_dt'].dt.date >= s_dt) & (df_display['지시일_dt'].dt.date <= e_dt)
-                df_display = df_display.loc[mask].drop(columns=['지시일_dt'])
+                mask = (df_filtered['지시일_dt'].dt.date >= s_dt) & (df_filtered['지시일_dt'].dt.date <= e_dt)
+                df_filtered = df_filtered.loc[mask].drop(columns=['지시일_dt'])
 
-            st.write("---")
-
-            # ⭐ [핵심 추가] 요약 지표 (평균 QCT 계산)
-            if not df_display.empty:
-                # QCT 평균 계산 (소수점 첫째자리까지)
-                avg_qct = df_display['QCT'].mean()
-                total_count = len(df_display)
+            # --- ⭐ [신규] 2차 선택 필터: 특정 배치만 골라내기 ---
+            if not df_filtered.empty:
+                st.write("---")
+                # 검색된 결과 내에서 배치 번호를 다중 선택할 수 있는 창
+                # "Batch No. (시험항목)" 형식으로 리스트 생성
+                df_filtered['select_label'] = df_filtered['Batch No.'] + " (" + df_filtered['시험항목'] + ")"
+                unique_labels = df_filtered['select_label'].unique().tolist()
                 
-                # 지표를 예쁘게 보여주기 위한 컬럼 배치
+                selected_labels = st.multiselect(
+                    "🎯 비교 분석할 항목을 선택하세요 (미선택 시 전체 평균 표시)",
+                    options=unique_labels,
+                    help="여기서 항목을 선택하면 상단의 평균 QCT가 선택된 값으로만 다시 계산됩니다."
+                )
+
+                # 선택된 항목이 있으면 선택된 것만, 없으면 전체 데이터를 분석 대상으로 설정
+                if selected_labels:
+                    df_analysis = df_filtered[df_filtered['select_label'].isin(selected_labels)]
+                    analysis_mode = "선택 항목"
+                else:
+                    df_analysis = df_filtered
+                    analysis_mode = "조회 전체"
+
+                # 📊 [실시간 메트릭] 분석 대상에 따라 값이 변함
+                avg_qct = df_analysis['QCT'].mean()
+                total_cnt = len(df_analysis)
+                max_qct = df_analysis['QCT'].max()
+
                 m1, m2, m3 = st.columns(3)
-                m1.metric("📊 조회 건수", f"{total_count} 건")
-                m2.metric("⏱️ 평균 QCT", f"{avg_qct:.1f} 일")
-                
-                # QCT가 가장 길었던 '최대값'도 보너스로 추가해봤습니다!
-                max_qct = df_display['QCT'].max()
-                m3.metric("⚠️ 최대 소요 기간", f"{max_qct} 일")
-                
+                m1.metric(f"📊 {analysis_mode} 건수", f"{total_cnt} 건")
+                # 선택 시 주황색 느낌으로 강조 (delta는 단순 디자인 요소)
+                m2.metric(f"⏱️ {analysis_mode} 평균 QCT", f"{avg_qct:.1f} 일", 
+                          delta="선택됨" if selected_labels else None)
+                m3.metric(f"⚠️ {analysis_mode} 최대 소요", f"{max_qct} 일")
+
                 st.write("") # 간격 조절
-            
-            # 4. 최종 결과 리스트 출력
-            st.dataframe(df_display.iloc[::-1], use_container_width=True, hide_index=True)
+                
+                # 최종 데이터프레임 출력 (불필요한 컬럼 삭제 후)
+                st.dataframe(df_filtered.drop(columns=['select_label'], errors='ignore').iloc[::-1], 
+                             use_container_width=True, hide_index=True)
             
         else:
             st.info("저장된 데이터가 없습니다.")
