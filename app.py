@@ -256,33 +256,36 @@ if menu == "📅 시험 일정 관리":
         deadline_date = st.date_input("8. 마감 기한")
         
         if sample_type != "선택해주세요" and test_item != "검체를 먼저 선택하세요":
+            # [1] 날짜 계산 시작
             if is_pending:
                 time_status, color, end_date_str = f"{status} 🔴", "#FF4B4B", "미정"
                 save_start, save_end = "-", "-"
-                qct_days = 0
+                qct_days = 0  # 대기/보류 시 0으로 초기화
             else:
+                # 무균시험 배양 기간 계산 (14일 혹은 18일)
                 days = 18 if add_incubation else 14 if test_item == "무균시험" else 0
                 end_date = test_date + timedelta(days=days)
                 
-                # QCT 계산 (종료일 - 지시일)
+                # ⭐ 핵심: QCT 계산 (예상종료일 - 시험지시일)
+                # .days를 붙여야 '14 days'가 아닌 숫자 '14'만 남습니다.
                 qct_days = (end_date - instruction_date).days
                 
                 time_status = "초과 🔴" if end_date > deadline_date else "준수 🟢"
                 color = "#FF4B4B" if end_date > deadline_date else "#00CC96"
                 
-                # 날짜 형식 %Y-%m-%d 고정
                 end_date_str = end_date.strftime('%Y-%m-%d')
                 save_start = test_date.strftime('%Y-%m-%d')
                 save_end = end_date_str
             
-            # 결과 시각화
+            # [2] 화면 표시 (사용자가 저장 전 미리 확인)
             st.markdown(f"""
                 <div style='background-color: #f0f2f6; padding: 15px; border-radius: 10px; border-left: 5px solid {color};'>
                     <h3 style='margin:0; color: {color};'>{time_status} 예상 종료일 : {end_date_str}</h3>
-                    <h4 style='margin:5px 0 0 0; color: #31333F;'>⏱️ QCT: {qct_days}일</h4>
+                    <h4 style='margin:5px 0 0 0; color: #31333F;'>⏱️ QCT (지시일~종료일): {qct_days if not is_pending else "미정"}일</h4>
                 </div>
             """, unsafe_allow_html=True)
             
+            # [3] 저장 버튼 클릭 시
             if st.button("💾 이 일정 기록 저장하기"):
                 if batch_no.strip() and tester.strip():
                     save_schedule(
@@ -297,7 +300,7 @@ if menu == "📅 시험 일정 관리":
                         save_end,
                         deadline_date.strftime('%Y-%m-%d'),
                         time_status,
-                        qct_days
+                        qct_days # ⭐ 계산된 QCT 숫자가 여기 들어갑니다!
                     )
                     st.toast('성공적으로 저장되었습니다!', icon='✅')
                     time.sleep(1)
