@@ -378,64 +378,138 @@ elif menu == "📝 공정 기록 등록":
             st.info("아직 저장된 기록이 없습니다.")
         
 elif menu == "🛠️ 공정별 일정 현황":
-    st.title("🛠️ 공정별 상세 일정 현황")
-    df_p = load_data(ws_process)
+    st.title("🛠️ 공정별 통합 일정 현황")
+    st.write("---")
+
+    # [1] 구글 시트 '공정기록' 탭에서 데이터를 최신으로 읽어옵니다.
+    df_p = load_data(ws_process) 
     
     if df_p.empty:
         st.info("등록된 공정 기록이 없습니다. '공정 기록 등록' 메뉴에서 먼저 작성해주세요.")
     else:
-        unique_batches = sorted(df_p['Batch No.'].unique())
-        col_d1, col_d2, col_d3 = st.columns([1, 1, 2])
+        # -------------------------------------------------------------------------
+        # [2] 데이터 전처리 (Pivoting을 위한 밑작업)
+        # -------------------------------------------------------------------------
+        # 시작/종료 시간을 날짜 형식으로 변환 (비교용)
+        df_p['시작날짜_계산용'] = pd.to_datetime(df_p['시작시간']).dt.date
+        df_p['종료날짜_계산용'] = pd.to_datetime(df_p['종료시간']).dt.date
+
+        # 전체 기간 범위 가져오기 (컬럼용)
+        all_dates_calc = pd.concat([df_p['시작날짜_계산용'], df_p['종료날짜_계산용']])
+        min_date = all_dates_calc.min()
+        max_date = all_dates_calc.max()
         
-        with col_d1: v_start = st.date_input("조회 시작일", datetime.today() - timedelta(days=2))
-        with col_d2: v_end = st.date_input("조회 종료일", datetime.today() + timedelta(days=10))
-        with col_d3:
-            search_batches = st.multiselect("Batch No. 검색 (비워두면 전체 조회)", options=unique_batches)
+        # 상단 필터 (기간 조회) - 기존 유지
+        st.subheader("🕵️‍♂️ 기간별 일정 조회")
+        col_date1, col_date2 = st.columns(2)
+        with col_date1: v_start = st.date_input("조회 시작일", min_date)
+        with col_date2: v_end = st.date_input("조회 종료일", max_date)
         
-        date_range = pd.date_range(v_start, v_end)
-        plot_data = []
-        target_batches = search_batches if search_batches else unique_batches
-        processes = ["조제분무", "동결건조", "체과혼합", "약제부충전", "용제부충전", "기타"]
-
-        for batch in target_batches:
-            for proc in processes:
-                row_dict = {"Batch No.": batch, "Process": proc}
-                target = df_p[(df_p['Batch No.'] == batch) & (df_p['공정명'] == proc)]
-                
-                for d in date_range:
-                    col_name = d.strftime('%m/%d')
-                    val = ""
-                    curr_date = d.date()
-                    
-                    if not target.empty:
-                        for _, r in target.iterrows():
-                            try:
-                                s_dt = pd.to_datetime(r['시작시간'])
-                                e_dt = pd.to_datetime(r['종료시간'])
-                                
-                                if s_dt.date() <= curr_date <= e_dt.date():
-                                    if s_dt.date() == e_dt.date() == curr_date: val = f"{s_dt.strftime('%H:%M')}~{e_dt.strftime('%H:%M')}"
-                                    elif curr_date == s_dt.date(): val = f"{s_dt.strftime('%H:%M')}~"
-                                    elif curr_date == e_dt.date(): val = f"~{e_dt.strftime('%H:%M')}"
-                                    else: val = " " 
-                            except:
-                                continue
-                    row_dict[col_name] = val
-                plot_data.append(row_dict)
-
-        if plot_data:
-            final_df = pd.DataFrame(plot_data).set_index(['Batch No.', 'Process'])
-            def color_logic(v):
-                if v and str(v).strip() != "": return 'background-color: #FFFF00; color: black; border: 1px solid #ddd; font-weight: bold;'
-                elif v == " ": return 'background-color: #FFFF00; border: 1px solid #ddd;'
-                return 'border: 1px solid #ddd; color: transparent;'
-
-            try:
-                st.dataframe(final_df.style.map(color_logic), use_container_width=True)
-            except:
-                st.dataframe(final_df.style.applymap(color_logic), use_container_width=True)
+        if v_start > v_end:
+            st.error("시작일이 종료일보다 늦을 수 없습니다.")
         else:
-            st.warning("조건에 맞는 데이터가 없습니다.")
+            # 기간 필터 적용
+            mask = (df_p['시작날짜_계산용'] <= v_end) & (df_p['종료날짜_계산용'] >= v_start)
+            filtered_df = df_p.loc[mask]
+
+            # 표에 표시할 날짜 범위 결정
+            display_dates = pd.date_range(v_start, v_end).date
+            
+            # -------------------------------------------------------------------------
+            # [3] ⭐ 가장 중요한 통합 테이블 구성 로직 (Pivot)
+            # -------------------------------------------------------------------------
+            # 시트에 저장된 Batch No.(E07447, E07447A...)에서 기준 배취(E07447)만 추출하는 주문
+            def get_base_id(batch_no):
+                for suffix in ["A", "B", "C", "D", "E"]: # 님이 사용하시는 꼬리표 목록
+                    if str(batch_no).endswith(suffix):
+                        return batch_no[:-1] # 마지막 한 글자를 떼냄
+                return batch_no # 꼬리표 없으면 그대로
+
+            # 기준 배취 목록 (E07447 등)
+            unique_base_batches = sorted(filtered_df['Batch No.'].apply(get_base_id).unique())
+            
+            # 표에 보여줄 공정 이름 순서 (이미지와 동일하게 고정)
+            fixed_processes = [
+                "조제분무", "동결건조", "체화혼합", "약제부충전", 
+                "용제부충전A", "용제부충전B", "용제부충전C"
+            ]
+            
+            # 데이터를 채워 넣을 빈 리스트
+            table_rows = []
+            
+            for base_batch in unique_base_batches:
+                # 하나의 배취(E07447) 아래에 7개 공정 줄을 무조건 만듭니다.
+                for proc_display_name in fixed_processes:
+                    row_data = {
+                        "Batch No.": base_batch,
+                        "공정명": proc_display_name
+                    }
+                    
+                    # 날짜 컬럼을 만들고 빈칸으로 초기화 ("H"는 하이라이트 표시용)
+                    for date in display_dates:
+                        date_col_name = date.strftime('%m/%d')
+                        row_data[date_col_name] = "" 
+                        
+                        # -------------------------------------------------------------
+                        # [4] ⭐ 시트 데이터와 표의 줄(Row)을 연결하는 핵심 로직
+                        # -------------------------------------------------------------
+                        is_highlight = False
+                        
+                        if "용제부충전" in proc_display_name:
+                            # [Case B] 용제부 충전 줄 (A,B,C...)
+                            # 표 줄 이름(`용제부충전A`)에서 `A` 꼬리표만 추출
+                            suffix = proc_display_name.replace("용제부충전", "")
+                            # 시트 데이터에서 검색할 배취명 (E07447 + A -> E07447A)
+                            stored_batch_no = base_batch + suffix
+                            
+                            # 시트 데이터에서 해당 배취 + '용제부충전' 공정이 당일에 있는지 검색
+                            match = filtered_df[
+                                (filtered_df['Batch No.'] == stored_batch_no) & 
+                                (filtered_df['공정명'] == "용제부충전") & 
+                                (filtered_df['시작날짜_계산용'] <= date) & 
+                                (filtered_df['종료날짜_계산용'] >= date)
+                           ]
+                            if not match.empty: is_highlight = True
+                                
+                        else:
+                            # [Case A] 약제부 공정 줄 (조제, 동결 등)
+                            # 시트 데이터에서 해당 배취(E07447) + 해당 공정이 당일에 있는지 검색
+                            match = filtered_df[
+                                (filtered_df['Batch No.'] == base_batch) & 
+                                (filtered_df['공정명'] == proc_display_name) & 
+                                (filtered_df['시작날짜_계산용'] <= date) & 
+                                (filtered_df['종료날짜_계산용'] >= date)
+                           ]
+                            if not match.empty: is_highlight = True
+                        
+                        # 데이터가 있으면 하이라이트 표시("H")를 넣어줍니다.
+                        if is_highlight:
+                            row_data[date_col_name] = "H"
+                            
+                    table_rows.append(row_data)
+
+            # [5] 리스트를 표(데이터프레임)로 만듭니다.
+            wide_df = pd.DataFrame(table_rows)
+            
+            # Batch No.와 공정명을 기준으로 표를 정렬하고 고정
+            wide_df = wide_df.set_index(['Batch No.', '공정명'])
+
+            # -------------------------------------------------------------------------
+            # [6] 데이터프레임 스타일링 (노란색 하이라이트 및 "H" 글자 숨기기)
+            # -------------------------------------------------------------------------
+            def highlight_cells(val):
+                if val == "H":
+                    # 배경색 노란색, 글자색도 노란색으로 해서 글자를 숨깁니다 (transparent 사용 가능)
+                    return 'background-color: #FFFF00; color: #FFFF00; border: 1px solid #ddd;' 
+                return 'border: 1px solid #ddd;'
+
+            # 스타일 적용 및 출력
+            styled_wide_df = wide_df.style.applymap(highlight_cells) # 최신 Pandas는 .style.map 사용
+
+            st.divider()
+            st.subheader("📋 통합 공정현황 간트차트")
+            st.dataframe(styled_wide_df, use_container_width=True)
+            st.caption("🟡 노란색: 해당 날짜 공정 진행 중")
 
 # 메뉴 이름 일치 완료 ("🗣️ 방명록 (Guestbook)")
 elif menu == "🗣️ 방명록 (Guestbook)":
