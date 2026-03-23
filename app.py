@@ -46,14 +46,15 @@ ws_guestbook = doc.worksheet("방명록")
 # =========================================================================
 # 3. 데이터 입출력 함수 (100% 구글 시트 전용)
 # =========================================================================
+
+def save_schedule(batch, tester, sample, item, status, inst_date, start_date, incubation, end_date, deadline, time_status, qct):
+    """시험 일정 데이터를 구글 시트에 12개 컬럼 순서로 저장하는 함수"""
+    row = [batch, tester, sample, item, status, inst_date, start_date, incubation, end_date, deadline, time_status, qct]
+    ws_schedule.append_row(row)
+
 def load_data(worksheet):
     records = worksheet.get_all_records()
     return pd.DataFrame(records)
-
-def save_schedule(batch, tester, sample, item, status, start_date, add_inc, end_date, deadline, time_status):
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    # 구글 시트 맨 아랫줄에 바로 추가
-    ws_schedule.append_row([now, batch, tester, sample, item, status, start_date, add_inc, end_date, deadline, time_status])
 
 def save_process(batch_no, proc_name, start_time, end_time, note):
     # (주의) 구글 시트 '공정기록' 탭 1행이 [Batch No., 공정명, 시작시간, 종료시간, 비고] 5개 열이라고 가정
@@ -231,7 +232,7 @@ elif menu == "📊 대시보드 (Dashboard)":
             except Exception as e:
                 st.error(f"일정표를 구성하는 중 오류가 발생했습니다: {e}")
                 
-elif menu == "📅 시험 일정 관리":
+if menu == "📅 시험 일정 관리":
     st.title("📅 시험 일정 자동 계산 및 기록")
     
     col1, col2 = st.columns(2)
@@ -248,7 +249,7 @@ elif menu == "📅 시험 일정 관리":
 
     with col2:
         is_pending = status in ["대기 중", "보류"]
-        # 날짜 선택 (기본적으로 시간 정보 없음)
+        # 날짜 입력 (시간 정보 없음)
         instruction_date = st.date_input("6. 시험지시일")
         test_date = st.date_input("7. 시험시작일", disabled=is_pending)
         add_incubation = st.checkbox("➕ 추가 배양 진행 (선택 시 4일 연장)") if test_item == "무균시험" else False
@@ -262,16 +263,19 @@ elif menu == "📅 시험 일정 관리":
             else:
                 days = 18 if add_incubation else 14 if test_item == "무균시험" else 0
                 end_date = test_date + timedelta(days=days)
+                
+                # QCT 계산 (종료일 - 지시일)
                 qct_days = (end_date - instruction_date).days
                 
                 time_status = "초과 🔴" if end_date > deadline_date else "준수 🟢"
                 color = "#FF4B4B" if end_date > deadline_date else "#00CC96"
                 
-                # ⭐ 날짜 형식에서 시간 제거 (%Y-%m-%d 만 사용)
+                # 날짜 형식 %Y-%m-%d 고정
                 end_date_str = end_date.strftime('%Y-%m-%d')
                 save_start = test_date.strftime('%Y-%m-%d')
                 save_end = end_date_str
             
+            # 결과 시각화
             st.markdown(f"""
                 <div style='background-color: #f0f2f6; padding: 15px; border-radius: 10px; border-left: 5px solid {color};'>
                     <h3 style='margin:0; color: {color};'>{time_status} 예상 종료일 : {end_date_str}</h3>
@@ -281,20 +285,19 @@ elif menu == "📅 시험 일정 관리":
             
             if st.button("💾 이 일정 기록 저장하기"):
                 if batch_no.strip() and tester.strip():
-                    # ⭐ 12개 컬럼 순서 고정 (시간 정보인 '기록시간' 제외)
                     save_schedule(
-                        batch_no.strip(),                               # 1. Batch No.
-                        tester.strip(),                                 # 2. 시험자
-                        sample_type,                                    # 3. 시험검체
-                        test_item,                                      # 4. 시험항목
-                        status,                                         # 5. 진행여부
-                        instruction_date.strftime('%Y-%m-%d'),          # 6. 시험지시일
-                        save_start,                                     # 7. 시험시작일
-                        "O" if add_incubation else "X",                 # 8. 추가배양
-                        save_end,                                       # 9. 예상종료일
-                        deadline_date.strftime('%Y-%m-%d'),             # 10. 마감기한
-                        time_status,                                    # 11. 기한상태
-                        qct_days                                        # 12. QCT
+                        batch_no.strip(),
+                        tester.strip(),
+                        sample_type,
+                        test_item,
+                        status,
+                        instruction_date.strftime('%Y-%m-%d'),
+                        save_start,
+                        "O" if add_incubation else "X",
+                        save_end,
+                        deadline_date.strftime('%Y-%m-%d'),
+                        time_status,
+                        qct_days
                     )
                     st.toast('성공적으로 저장되었습니다!', icon='✅')
                     time.sleep(1)
@@ -302,6 +305,80 @@ elif menu == "📅 시험 일정 관리":
                 else:
                     st.warning("Batch No.와 시험자를 모두 입력해주세요.")
 
+    st.divider()
+    tab1, tab2 = st.tabs(["🔍 시험 일정 검색", "🛠️ 전체 일정 관리"])
+    
+    # 12개 컬럼 순서 정의
+    cols_order = ["Batch No.", "시험자", "시험검체", "시험항목", "진행여부", "시험지시일", "시험시작일", "추가배양", "예상종료일", "마감기한", "기한상태", "QCT"]
+
+    with tab1:
+        st.subheader("🔍 조건별 일정 검색")
+        df_search = load_data(ws_schedule)
+        
+        if not df_search.empty:
+            # [안전장치] 제목 공백 제거 및 순서 정렬
+            df_search.columns = [c.strip() for c in df_search.columns]
+            actual_cols = [c for c in cols_order if c in df_search.columns]
+            df_display = df_search[actual_cols].copy()
+            
+            s_col1, s_col2 = st.columns([1, 2])
+            with s_col1:
+                search_keyword = st.text_input("Batch No. 검색", placeholder="예: LP24001", key="search_bar")
+            with s_col2:
+                filter_dates = st.date_input("기간 조회 (지시일 기준)", value=[], key="date_filter")
+            
+            if search_keyword:
+                df_display = df_display[df_display['Batch No.'].astype(str).str.contains(search_keyword, case=False, na=False)]
+            
+            if len(filter_dates) == 2:
+                df_display['지시일_dt'] = pd.to_datetime(df_display['시험지시일'], errors='coerce')
+                s_dt, e_dt = filter_dates
+                mask = (df_display['지시일_dt'].dt.date >= s_dt) & (df_display['지시일_dt'].dt.date <= e_dt)
+                df_display = df_display.loc[mask].drop(columns=['지시일_dt'])
+            
+            st.write(f"검색 결과: 총 **{len(df_display)}** 건")
+            st.dataframe(df_display.iloc[::-1], use_container_width=True, hide_index=True)
+        else:
+            st.info("아직 저장된 일정이 없습니다.")
+
+    with tab2:
+        st.subheader("🛠️ 전체 일정 수정 및 삭제")
+        df_manage = load_data(ws_schedule)
+        
+        if not df_manage.empty:
+            df_manage.columns = [c.strip() for c in df_manage.columns]
+            actual_cols = [c for c in cols_order if c in df_manage.columns]
+            df_reversed = df_manage[actual_cols].iloc[::-1].reset_index(drop=True)
+            
+            # 날짜 형식 정규화
+            date_cols = ["시험지시일", "시험시작일", "예상종료일", "마감기한"]
+            for col in date_cols:
+                if col in df_reversed.columns:
+                    df_reversed[col] = pd.to_datetime(df_reversed[col], errors='coerce').dt.date
+            
+            edited_df = st.data_editor(
+                df_reversed,
+                use_container_width=True,
+                num_rows="dynamic",
+                column_config={
+                    "진행여부": st.column_config.SelectboxColumn("진행여부", options=["대기 중", "진행 중", "완료", "보류"]),
+                    "기한상태": st.column_config.SelectboxColumn("기한상태", options=["준수 🟢", "초과 🔴", "대기 중 🟡", "보류 🔴"]),
+                    "QCT": st.column_config.NumberColumn("QCT", help="종료일 - 지시일")
+                },
+                key="schedule_editor_v3"
+            )
+            
+            if st.button("💾 변경사항 안전하게 덮어쓰기", type="primary"):
+                final_df = edited_df.iloc[::-1].copy()
+                for col in date_cols:
+                    if col in final_df.columns:
+                        final_df[col] = final_df[col].apply(lambda x: x.strftime('%Y-%m-%d') if pd.notnull(x) and hasattr(x, 'strftime') else "-")
+                
+                ws_schedule.clear()
+                ws_schedule.update([final_df.columns.values.tolist()] + final_df.values.tolist())
+                st.success("✅ 변경사항이 구글 시트에 저장되었습니다!")
+                time.sleep(1)
+                st.rerun()
 
 elif menu == "📝 공정 기록 등록":
     st.title("📝 공정별 작업 시간 기록")
