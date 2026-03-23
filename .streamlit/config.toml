@@ -1,5 +1,5 @@
 [theme]
 primaryColor = "#FF4B4B" # 강조색 (버튼 등)
 backgroundColor = "#FFFFFF" # 메인 화면 배경색
-secondaryBackgroundColor = "#FF8C00" # 👈 여기가 사이드바 색상입니다! (Dark Orange)
-textColor = "#31333F" # 글자색
+secondaryBackgroundColor = "#FFB347"
+textColor = "#262730"
