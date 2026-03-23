@@ -494,7 +494,7 @@ elif menu == "🛠️ 공정별 일정 현황":
             st.dataframe(styled_wide_df, use_container_width=True)
 
 elif menu == "🗣️ 방명록 (Guestbook)":
-    st.title("💌 ATLAS 방명록 (비밀글 지원)")
+    st.title("ATLAS 방명록 (비밀글 지원)")
 
     # [1] 데이터 로드 (이미 코드 맨 위에 연결해둔 ws_guestbook 변수 사용!)
     try:
