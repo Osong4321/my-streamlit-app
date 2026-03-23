@@ -69,18 +69,16 @@ def save_guestbook(name, msg):
 st.markdown(
     """
     <style>
-    /* 1. 사이드바 내부 컨테이너를 수직 정렬(Flex) 구조로 변경 */
+    /* 사이드바 내부 전체 컨테이너의 하단 여백 제거 */
     [data-testid="stSidebarContent"] {
-        display: flex;
-        flex-direction: column;
-        height: 100vh; /* 전체 화면 높이 사용 */
+        padding-bottom: 0px !important;
     }
 
-    /* 2. 하단 로고 영역을 맨 아래로 강제 이동 */
+    /* 로고 컨테이너를 더 아래로 밀착 */
     .sidebar-footer {
-        margin-top: auto; /* 상단 메뉴들과의 거리를 최대로 벌려 바닥으로 밀어냄 */
-        padding-top: 10px;
-        padding-bottom: 20px; /* 바닥에서 약간의 여백만 남김 */
+        margin-top: auto; 
+        padding-top: 5px;
+        padding-bottom: 5px; /* 20px에서 5px로 줄여서 더 바닥으로! */
         text-align: center;
         width: 100%;
     }
