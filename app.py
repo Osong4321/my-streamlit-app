@@ -8,6 +8,9 @@ import time as tm
 #from streamlit_calendar import calendar
 import os
 import plotly.express as px  # 시각화를 위한 라이브러리
+import json
+import gspread
+from google.oauth2.service_account import Credentials
 
 # 1. 페이지 기본 설정
 st.set_page_config(
@@ -16,9 +19,23 @@ st.set_page_config(
     layout="wide"
 )
 
-GUESTBOOK_FILE = "guestbook_data.csv"
-SCHEDULE_FILE = "schedule_data.csv"
-PROCESS_FILE = "process_data.csv"
+# 구글 시트 마스터키로 연결하는 주문입니다.
+@st.cache_resource
+def init_connection():
+    key_dict = json.loads(st.secrets["google_key"])
+    scopes = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
+    creds = Credentials.from_service_account_info(key_dict, scopes=scopes)
+    return gspread.authorize(creds)
+
+client = init_connection()
+
+# CSV 파일 대신 구글 시트의 탭(워크시트)들을 불러옵니다.
+SHEET_URL = "https://docs.google.com/spreadsheets/d/https://docs.google.com/spreadsheets/d/1Ejo6Yse0iZjFc2V45yuAVNjw7Bc6VAyqF5aV73iRTng/edit?usp=sharing/edit"
+doc = client.open_by_url(SHEET_URL)
+
+ws_process = doc.worksheet("공정기록")
+ws_schedule = doc.worksheet("시험일정")
+ws_guestbook = doc.worksheet("방명록")
 
 # 3. CSV 파일 초기화
 def init_csv():
@@ -31,10 +48,10 @@ def init_csv():
         pd.DataFrame(columns=["Batch No.", "공정명", "시작시간", "종료시간", "비고", "기록시간"]).to_csv(PROCESS_FILE, index=False, encoding="utf-8-sig")
     # --- [공정 파일 초기화 추가 끝] ---
 
-def load_data(file_name):
-    if not os.path.exists(file_name):
-        init_csv()
-    return pd.read_csv(file_name, encoding="utf-8-sig")
+def load_data(worksheet):
+    # 구글 시트에 있는 모든 데이터를 긁어와서 표(데이터프레임)로 만듭니다.
+    records = worksheet.get_all_records()
+    return pd.DataFrame(records)
 
 # 4. 저장 함수들 (✅ 시험자 tester 매개변수 및 데이터 추가)
 def save_schedule(batch, tester, sample, item, status, start_date, add_inc, end_date, deadline, time_status):
@@ -51,7 +68,7 @@ PROCESS_FILE = "process_data.csv"
 #4.1 공정기록 # ✅ 올바른 함수 정의
 # 4. 저장 함수 (여기가 제일 중요함!! 기존 함수 지우고 이거 복사하세요)
 def save_process(batch_no, proc_name, start_time, end_time, note):
-    df = load_data(PROCESS_FILE)
+    df = load_data(ws_process)
     
     # 시스템 시간을 쓰지 않고, 매개변수로 들어온 start_time을 그대로 넣습니다.
     new_data = pd.DataFrame([{
@@ -67,8 +84,8 @@ def save_process(batch_no, proc_name, start_time, end_time, note):
     
 def save_guestbook(name, msg):
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    new_data = pd.DataFrame([{"이름": name, "메시지": msg, "작성시간": now}])
-    new_data.to_csv(GUESTBOOK_FILE, mode='a', header=False, index=False, encoding="utf-8-sig")
+    # 구글 시트 맨 밑에 새로운 행을 딱 한 줄 추가합니다. (순서대로 쏙 들어갑니다)
+    ws_guestbook.append_row([now, name, msg])
 
 init_csv()
 
@@ -460,7 +477,7 @@ elif menu == "📝 공정 기록 등록":
         st.subheader("🛠️ 저장된 기록 관리")
         st.info("💡 엑셀처럼 내용을 직접 클릭해서 수정하거나, 행을 선택해 삭제할 수 있습니다.")
         
-        df_edit = load_data(PROCESS_FILE)
+        df_edit = load_data(ws_process)
         
         if not df_edit.empty:
             # 최신순 정렬 (역순)
@@ -487,8 +504,9 @@ elif menu == "📝 공정 기록 등록":
                     # 1. 다시 날짜순(과거순)으로 되돌리기 위해 역순 정렬
                     final_df = edited_df.iloc[::-1]
                     
-                    # 2. CSV 파일에 저장
-                    final_df.to_csv(PROCESS_FILE, index=False, encoding="utf-8-sig")
+                    # 구글 시트 안의 내용을 싹 지우고, 수정된 표(final_df)를 통째로 다시 밀어 넣습니다.
+                    ws_process.clear()
+                    ws_process.update([final_df.columns.values.tolist()] + final_df.values.tolist())
                     
                     st.success("✅ 수정된 내용이 성공적으로 저장되었습니다!")
                     tm.sleep(1)
@@ -501,7 +519,7 @@ elif menu == "📝 공정 기록 등록":
 elif menu == "🛠️ 공정별 일정 현황":
     st.title("🛠️ 공정별 상세 일정 현황")
 
-    df_p = load_data(PROCESS_FILE)
+    df_p = load_data(ws_process)
     
     if df_p.empty:
         st.info("등록된 공정 기록이 없습니다. '공정 기록 등록' 메뉴에서 먼저 작성해주세요.")
