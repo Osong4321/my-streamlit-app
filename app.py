@@ -315,6 +315,9 @@ if menu == "📅 시험 일정 관리":
         st.subheader("🔍 조건별 일정 검색")
         df_search = load_data(ws_schedule)
         
+        # 👇 [여기에 추가!] 시트에서 가져온 원본 데이터를 그대로 화면에 뿌려봅니다.
+        st.write("🧪 시트 원본 데이터 상태:", df_search)
+        
         if not df_search.empty:
             # [안전장치] 제목 공백 제거 및 순서 정렬
             df_search.columns = [c.strip() for c in df_search.columns]
