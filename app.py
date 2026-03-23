@@ -316,37 +316,49 @@ if menu == "📅 시험 일정 관리":
 
     with tab1:
         st.subheader("🔍 조건별 일정 검색")
-        df_search = load_data(ws_schedule)
         
-        # 👇 [여기에 추가!] 시트에서 가져온 원본 데이터를 그대로 화면에 뿌려봅니다.
-        st.write("🧪 시트 원본 데이터 상태:", df_search)
+        # 1. 데이터 불러오기
+        df_raw = load_data(ws_schedule)
         
-        if not df_search.empty:
-            # [안전장치] 제목 공백 제거 및 순서 정렬
-            df_search.columns = [c.strip() for c in df_search.columns]
-            actual_cols = [c for c in cols_order if c in df_search.columns]
-            df_display = df_search[actual_cols].copy()
+        if not df_raw.empty:
+            # 제목 공백 제거
+            df_raw.columns = [c.strip() for c in df_raw.columns]
             
+            # [자동 계산] 로딩 즉시 QCT 계산 (시트에 없어도 앱에서 계산)
+            t_end = pd.to_datetime(df_raw['예상종료일'], errors='coerce')
+            t_inst = pd.to_datetime(df_raw['시험지시일'], errors='coerce')
+            df_raw['QCT'] = (t_end - t_inst).dt.days.fillna(0).astype(int)
+            
+            # 2. 검색 필터 UI
             s_col1, s_col2 = st.columns([1, 2])
             with s_col1:
                 search_keyword = st.text_input("Batch No. 검색", placeholder="예: LP24001", key="search_bar")
             with s_col2:
+                # 기간 조회 기본값을 빈 리스트[]로 두어 처음엔 전체가 나오게 설정
                 filter_dates = st.date_input("기간 조회 (지시일 기준)", value=[], key="date_filter")
             
+            # 3. 데이터 필터링 시작 (원본은 건드리지 않고 복사본 df_display 사용)
+            actual_cols = [c for c in cols_order if c in df_raw.columns]
+            df_display = df_raw[actual_cols].copy()
+            
+            # 키워드 필터링
             if search_keyword:
                 df_display = df_display[df_display['Batch No.'].astype(str).str.contains(search_keyword, case=False, na=False)]
             
+            # 날짜 범위 필터링
             if len(filter_dates) == 2:
                 df_display['지시일_dt'] = pd.to_datetime(df_display['시험지시일'], errors='coerce')
                 s_dt, e_dt = filter_dates
                 mask = (df_display['지시일_dt'].dt.date >= s_dt) & (df_display['지시일_dt'].dt.date <= e_dt)
                 df_display = df_display.loc[mask].drop(columns=['지시일_dt'])
             
-            st.write(f"검색 결과: 총 **{len(df_display)}** 건")
+            # 4. 최종 결과만 출력 (원본 데이터 출력 코드 삭제 완료!)
+            st.write(f"조회 결과: 총 **{len(df_display)}** 건")
             st.dataframe(df_display.iloc[::-1], use_container_width=True, hide_index=True)
+            
         else:
-            st.info("아직 저장된 일정이 없습니다.")
-
+            st.info("저장된 데이터가 없습니다.")
+            
     with tab2:
         st.subheader("🛠️ 전체 일정 수정 및 삭제")
         df_manage = load_data(ws_schedule)
