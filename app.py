@@ -93,19 +93,26 @@ init_csv()
 st.sidebar.title("ATLAS 메뉴")
 menu = st.sidebar.radio("이동할 페이지를 선택하세요:", 
                         [
-                            "홈 (Home)", 
+                            "🏠 홈 (Home)", 
                             "📊 대시보드 (Dashboard)", 
-                            "시험 일정 관리", 
+                            "📅 시험 일정 관리", 
                             "📝 공정 기록 등록",      # ✅ 추가됨
                             "🛠️ 공정별 일정 현황",     # ✅ 추가됨
-                            "방명록 (Guestbook)"
+                            "🗣️ 방명록 (Guestbook)"
                         ])
 # 6. 메인 화면 구성
-if menu == "홈 (Home)":
-    st.title("🏠 환영합니다!")
-    st.subheader("ATLAS (Automated Trend Learning and Analysis System)")
+if menu == "🏠 홈 (Home)":
+    st.title("🏠 미생물 파트 통합 관리 시스템")
     st.write("오송루피어QC팀 미생물파트 시험일정 자동화 시스템입니다.")
     st.write("---")
+    st.info("💡 구글 스프레드시트 클라우드 연동이 완료되어 24시간 안전하게 데이터가 보관됩니다!")
+    st.subheader("ATLAS (Automated Trend Learning and Analysis System) 📌 시스템 주요 기능")
+    st.markdown("""
+    1. **📝 공정 기록 등록**: 공정별 작업 시간을 수기 및 클릭으로 간편하게 기록
+    2. **🛠️ 공정별 일정 현황**: 전체 공정의 흐름을 날짜별/배치별로 시각화 (간트차트)
+    3. **📅 시험 일정 관리**: 무균/엔도톡신 등 시험 일정 자동 계산 및 마감 관리
+    4. **📊 대시보드**: 전체 업무 현황과 진행률을 한눈에 파악
+    """)
 
 elif menu == "📊 대시보드 (Dashboard)":
     st.title("📊 시험 일정 현황 대시보드")
