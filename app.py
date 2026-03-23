@@ -81,7 +81,7 @@ if menu == "🏠 홈 (Home)":
     st.subheader("ATLAS (Automated Trend Learning and Analysis System) 📌 시스템 주요 기능")
     st.markdown("""
     1. **📝 공정 기록 등록**: 공정별 작업 시간을 수기 및 클릭으로 간편하게 기록
-    2. **🛠️ 공정별 일정 현황**: 전체 공정의 흐름을 날짜별/배치별로 시각화 (간트차트)
+    2. **🛠️ 공정별 일정 현황**: 전체 공정의 흐름을 날짜별/배치별로 시각화 (차트)
     3. **📅 시험 일정 관리**: 무균/엔도톡신 등 시험 일정 자동 계산 및 마감 관리
     4. **📊 대시보드**: 전체 업무 현황과 진행률을 한눈에 파악
     """)
@@ -386,16 +386,16 @@ elif menu == "🛠️ 공정별 일정 현황":
     if df_p.empty:
         st.info("등록된 공정 기록이 없습니다. '공정 기록 등록' 메뉴에서 먼저 작성해주세요.")
     else:
-        st.subheader("🕵️‍♂️ 기간 및 배취별 일정 조회")
+        st.subheader("🕵️‍♂️ 기간 및 배치별 일정 조회")
         
-        # 🟢 기준 배취(E07447)만 추출하는 함수 (검색 목록을 만들기 위해 위로 끌어올림)
+        # 🟢 기준 배치(E07447)만 추출하는 함수 (검색 목록을 만들기 위해 위로 끌어올림)
         def get_base_id(batch_no):
             for suffix in ["A", "B", "C", "D", "E"]:
                 if str(batch_no).endswith(suffix):
                     return batch_no[:-1]
             return batch_no
 
-        # 🟢 전체 기준 배취 목록 (E07447, E07448 등)
+        # 🟢 전체 기준 배치 목록 (E07447, E07448 등)
         all_unique_bases = sorted(df_p['Batch No.'].apply(get_base_id).unique())
 
         # 전체 데이터의 날짜 범위 추출
@@ -420,7 +420,7 @@ elif menu == "🛠️ 공정별 일정 현황":
         else:
             display_dates = pd.date_range(v_start, v_end).date
             
-            # 🟢 검색창에서 선택한 배취가 있으면 그것만, 없으면 전체 다 보여주기
+            # 🟢 검색창에서 선택한 배치가 있으면 그것만, 없으면 전체 다 보여주기
             target_base_batches = search_batches if search_batches else all_unique_bases
             
             fixed_processes = [
@@ -430,7 +430,7 @@ elif menu == "🛠️ 공정별 일정 현황":
             
             table_rows = []
             
-            # 🟢 필터링된 배취(target_base_batches)에 대해서만 표 생성
+            # 🟢 필터링된 배치(target_base_batches)에 대해서만 표 생성
             for base_batch in target_base_batches:
                 for proc_display_name in fixed_processes:
                     row_data = {"Batch No.": base_batch, "공정명": proc_display_name}
@@ -484,7 +484,7 @@ elif menu == "🛠️ 공정별 일정 현황":
                 styled_wide_df = wide_df.style.applymap(color_logic)
 
             st.divider()
-            st.subheader("📋 통합 공정현황 간트차트")
+            st.subheader("📋 통합 공정현황 차트")
             if search_batches:
                 st.caption(f"🔍 검색된 배치: {', '.join(search_batches)}")
             st.dataframe(styled_wide_df, use_container_width=True)
