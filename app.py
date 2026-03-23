@@ -7,6 +7,10 @@ import json
 import gspread
 from google.oauth2.service_account import Credentials
 
+# 관리자 인증 상태를 기억하기 위한 변수 설정
+if 'is_admin' not in st.session_state:
+    st.session_state['is_admin'] = False
+
 # =========================================================================
 # 1. 페이지 기본 설정
 # =========================================================================
@@ -489,30 +493,65 @@ elif menu == "🛠️ 공정별 일정 현황":
                 st.caption(f"🔍 검색된 배치: {', '.join(search_batches)}")
             st.dataframe(styled_wide_df, use_container_width=True)
 
-# 메뉴 이름 일치 완료 ("🗣️ 방명록 (Guestbook)")
-elif menu == "🗣️ 방명록 (Guestbook)":
-    st.title("📝 시스템 개선 건의사항 및 관리")
-    with st.expander("➕ 새 건의사항 작성하기", expanded=True):
-        with st.form(key='guest_form', clear_on_submit=True):
-            user_name = st.text_input("작성자 이름")
-            user_msg = st.text_area("내용")
-            if st.form_submit_button("저장하기"):
-                if user_msg.strip():
-                    save_guestbook(user_name if user_name else "익명", user_msg)
-                    st.success("✅ 저장되었습니다!")
-                    tm.sleep(1)
+elif menu == "💌 방명록":
+    st.title("💌 ATLAS 방명록")
+
+    # --- [관리자 전용 섹션] ---
+    with st.sidebar:
+        st.write("---")
+        if not st.session_state['is_admin']:
+            admin_pw = st.text_input("관리자 인증 (Master PW)", type="password")
+            if st.button("인증하기"):
+                # 💡 여기에 님이 정하신 마스터 비밀번호를 넣으세요! (예: 1234)
+                if admin_pw == "0000": 
+                    st.session_state['is_admin'] = True
+                    st.success("관리자 모드 활성화!")
+                    st.rerun()
+                else:
+                    st.error("비밀번호가 틀렸습니다.")
+        else:
+            st.info("🔓 관리자 모드 작동 중")
+            if st.button("로그아웃"):
+                st.session_state['is_admin'] = False
+                st.rerun()
+
+    # [1] 데이터 불러오기
+    df_gb = load_data(ws_guestbook)
+    
+    # [2] 방명록 작성 (기존 동일)
+    with st.expander("📝 새 글 남기기", expanded=False):
+        with st.form("guestbook_form", clear_on_submit=True):
+            gb_name = st.text_input("작성자")
+            gb_content = st.text_area("내용")
+            gb_pin = st.text_input("핀번호 (4자리)", type="password")
+            if st.form_submit_button("등록하기"):
+                if gb_name and gb_content and gb_pin:
+                    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    ws_guestbook.append_row([gb_name, gb_content, now, gb_pin])
+                    st.success("등록되었습니다!")
                     st.rerun()
 
-    st.write("---")
-    df_guest = load_data(ws_guestbook)
-    if not df_guest.empty:
-        edited_guest = st.data_editor(df_guest.iloc[::-1], use_container_width=True, num_rows="dynamic",
-                                      column_config={"작성시간": st.column_config.TextColumn("작성시간", disabled=True)})
-        if st.button("💾 방명록 변경사항 저장하기"):
-            # 구글 시트에 수정사항 덮어쓰기
-            ws_guestbook.clear()
-            final_guest = edited_guest.iloc[::-1]
-            ws_guestbook.update([final_guest.columns.values.tolist()] + final_guest.values.tolist())
-            st.success("업데이트 완료! ✅")
-            tm.sleep(1)
-            st.rerun()
+    st.divider()
+
+    # [3] 방명록 목록 표시
+    if not df_gb.empty:
+        df_gb_display = df_gb.iloc[::-1]
+        for idx, row in df_gb_display.iterrows():
+            st.markdown(f"**👤 {row['작성자']}** <small>({row['작성시간']})</small>", unsafe_allow_html=True)
+            
+            # ⭐ [핵심 로직] 관리자이거나 핀번호가 일치할 때만 공개
+            if st.session_state['is_admin']:
+                # 관리자는 핀번호 입력창 없이 바로 내용을 보여줍니다.
+                st.info(f"🔓 (관리자 확인됨) {row['내용']}")
+                st.caption(f"🔑 설정된 핀번호: {row['비밀번호']}") # 관리자용 힌트
+            else:
+                # 일반 사용자 모드
+                user_pin = st.text_input(f"핀번호 입력 ({row['작성자']})", type="password", key=f"pin_{idx}", label_visibility="collapsed")
+                
+                if user_pin == str(row['비밀번호']):
+                    st.info(f"🔓 {row['내용']}")
+                elif user_pin == "":
+                    st.warning("🔒 비밀글입니다. 핀번호를 입력하세요.")
+                else:
+                    st.error("❌ 핀번호 불일치")
+            st.write("---")
