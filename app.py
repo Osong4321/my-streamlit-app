@@ -69,19 +69,20 @@ def save_guestbook(name, msg):
 st.markdown(
     """
     <style>
-    /* 1. 사이드바 내부를 위아래로 나누기 위한 설정 */
+    /* 1. 사이드바 내부 컨테이너를 수직 정렬(Flex) 구조로 변경 */
     [data-testid="stSidebarContent"] {
         display: flex;
         flex-direction: column;
-        height: 100vh;
+        height: 100vh; /* 전체 화면 높이 사용 */
     }
 
-    /* 2. 하단 로고 컨테이너 (맨 아래로 밀어내기) */
+    /* 2. 하단 로고 영역을 맨 아래로 강제 이동 */
     .sidebar-footer {
-        margin-top: auto; /* 상단 메뉴들과의 거리를 최대로 벌려 맨 아래로 밀어냄 */
-        padding: 20px;
+        margin-top: auto; /* 상단 메뉴들과의 거리를 최대로 벌려 바닥으로 밀어냄 */
+        padding-top: 10px;
+        padding-bottom: 20px; /* 바닥에서 약간의 여백만 남김 */
         text-align: center;
-        border-top: 1px solid rgba(0, 0, 0, 0.05); /* 경계선만 살짝 추가 */
+        width: 100%;
     }
     </style>
     """,
