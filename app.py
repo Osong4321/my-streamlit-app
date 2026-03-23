@@ -315,7 +315,7 @@ if menu == "📅 시험 일정 관리":
     cols_order = ["Batch No.", "시험자", "시험검체", "시험항목", "진행여부", "시험지시일", "시험시작일", "추가배양", "예상종료일", "마감기한", "기한상태", "QCT"]
 
     with tab1:
-        st.subheader("🔍 일정 검색 및 개별 항목 비교 분석")
+        st.subheader("🔍 일정 검색 및 체크박스 비교 분석")
         
         # 1. 데이터 불러오기 및 자동 계산
         df_raw = load_data(ws_schedule)
@@ -328,13 +328,14 @@ if menu == "📅 시험 일정 관리":
             t_inst = pd.to_datetime(df_raw['시험지시일'], errors='coerce')
             df_raw['QCT'] = (t_end - t_inst).dt.days.fillna(0).astype(int)
             
-            # 2. 1차 필터링 (키워드 및 날짜)
+            # 2. 검색 필터 UI (상단)
             s_col1, s_col2 = st.columns([1, 2])
             with s_col1:
-                search_keyword = st.text_input("Batch No. 검색", placeholder="예: LP24001", key="search_bar")
+                search_keyword = st.text_input("Batch No. 검색", placeholder="예: LP24001", key="search_bar_v4")
             with s_col2:
-                filter_dates = st.date_input("기간 조회 (지시일 기준)", value=[], key="date_filter")
+                filter_dates = st.date_input("기간 조회 (지시일 기준)", value=[], key="date_filter_v4")
             
+            # 3. 데이터 필터링 (원본 검색 결과)
             actual_cols = [c for c in cols_order if c in df_raw.columns]
             df_filtered = df_raw[actual_cols].copy()
             
@@ -347,45 +348,57 @@ if menu == "📅 시험 일정 관리":
                 mask = (df_filtered['지시일_dt'].dt.date >= s_dt) & (df_filtered['지시일_dt'].dt.date <= e_dt)
                 df_filtered = df_filtered.loc[mask].drop(columns=['지시일_dt'])
 
-            # --- ⭐ [신규] 2차 선택 필터: 특정 배치만 골라내기 ---
             if not df_filtered.empty:
-                st.write("---")
-                # 검색된 결과 내에서 배치 번호를 다중 선택할 수 있는 창
-                # "Batch No. (시험항목)" 형식으로 리스트 생성
-                df_filtered['select_label'] = df_filtered['Batch No.'] + " (" + df_filtered['시험항목'] + ")"
-                unique_labels = df_filtered['select_label'].unique().tolist()
+                # --- ⭐ [핵심] 체크박스 선택 로직 ---
+                # 데이터프레임 맨 앞에 '선택' 컬럼 추가 (기본값 False)
+                df_with_selections = df_filtered.copy()
+                df_with_selections.insert(0, "✅ 선택", False)
                 
-                selected_labels = st.multiselect(
-                    "🎯 비교 분석할 항목을 선택하세요 (미선택 시 전체 평균 표시)",
-                    options=unique_labels,
-                    help="여기서 항목을 선택하면 상단의 평균 QCT가 선택된 값으로만 다시 계산됩니다."
+                # 데이터 에디터로 체크박스가 포함된 표 출력
+                # 최신 데이터가 위로 오도록 역순 출력
+                edited_df = st.data_editor(
+                    df_with_selections.iloc[::-1],
+                    hide_index=True,
+                    use_container_width=True,
+                    column_config={
+                        "✅ 선택": st.column_config.CheckboxColumn(
+                            "선택",
+                            help="평균 QCT 계산에 포함할 항목을 체크하세요",
+                            default=False,
+                        )
+                    },
+                    disabled=[col for col in df_with_selections.columns if col != "✅ 선택"], # 체크박스만 수정 가능하게 설정
+                    key="selection_editor"
                 )
 
-                # 선택된 항목이 있으면 선택된 것만, 없으면 전체 데이터를 분석 대상으로 설정
-                if selected_labels:
-                    df_analysis = df_filtered[df_filtered['select_label'].isin(selected_labels)]
+                # 4. 분석 대상 결정 (체크된 항목이 있으면 그것만, 없으면 전체)
+                selected_rows = edited_df[edited_df["✅ 선택"] == True]
+                
+                if not selected_rows.empty:
+                    df_analysis = selected_rows
                     analysis_mode = "선택 항목"
+                    highlight_style = "inverse" # 강조용
                 else:
-                    df_analysis = df_filtered
+                    df_analysis = edited_df
                     analysis_mode = "조회 전체"
+                    highlight_style = "normal"
 
-                # 📊 [실시간 메트릭] 분석 대상에 따라 값이 변함
+                # 📊 [실시간 지표 업데이트]
                 avg_qct = df_analysis['QCT'].mean()
                 total_cnt = len(df_analysis)
                 max_qct = df_analysis['QCT'].max()
 
+                st.write("---")
+                st.markdown(f"#### 📈 {analysis_mode} 분석 결과")
                 m1, m2, m3 = st.columns(3)
-                m1.metric(f"📊 {analysis_mode} 건수", f"{total_cnt} 건")
-                # 선택 시 주황색 느낌으로 강조 (delta는 단순 디자인 요소)
-                m2.metric(f"⏱️ {analysis_mode} 평균 QCT", f"{avg_qct:.1f} 일", 
-                          delta="선택됨" if selected_labels else None)
-                m3.metric(f"⚠️ {analysis_mode} 최대 소요", f"{max_qct} 일")
-
-                st.write("") # 간격 조절
+                m1.metric("📊 분석 건수", f"{total_cnt} 건")
+                m2.metric("⏱️ 평균 QCT", f"{avg_qct:.1f} 일")
+                m3.metric("⚠️ 최대 소요", f"{max_qct} 일")
                 
-                # 최종 데이터프레임 출력 (불필요한 컬럼 삭제 후)
-                st.dataframe(df_filtered.drop(columns=['select_label'], errors='ignore').iloc[::-1], 
-                             use_container_width=True, hide_index=True)
+                if not selected_rows.empty:
+                    st.caption("💡 현재 표에서 체크된 항목들만 계산된 수치입니다.")
+                else:
+                    st.caption("💡 체크박스를 선택하면 해당 항목들만의 평균을 구할 수 있습니다.")
             
         else:
             st.info("저장된 데이터가 없습니다.")
