@@ -494,78 +494,84 @@ elif menu == "🛠️ 공정별 일정 현황":
             st.dataframe(styled_wide_df, use_container_width=True)
 
 elif menu == "🗣️ 방명록 (Guestbook)":
-    st.title("🗣️ 방명록 (Guestbook)")
+    st.title("💌 ATLAS 방명록 (비밀글 지원)")
 
-    # [1] 방명록 전용 시트 연결 (변수가 없을 경우를 대비해 여기서 직접 연결)
+    # [1] 데이터 로드 (이미 코드 맨 위에 연결해둔 ws_guestbook 변수 사용!)
     try:
-        # 'sh'는 님이 구글 시트를 연 변수명입니다. (보통 sh = gc.open_by_key(...) 식)
-        # 만약 시트 연결 변수명이 다르다면 sh 대신 님이 쓰시는 변수명을 넣어주세요.
-        target_ws = sh.worksheet("방명록") 
-        df_gb = pd.DataFrame(target_ws.get_all_records())
+        df_gb = load_data(ws_guestbook)
     except Exception as e:
-        st.error(f"⚠️ 시트 연결 오류: '방명록' 탭을 찾을 수 없습니다. (에러: {e})")
-        st.info("💡 구글 시트에 '방명록'이라는 이름의 탭이 있는지 확인해 주세요!")
+        st.error(f"데이터를 불러오는 중 오류가 발생했습니다: {e}")
         df_gb = pd.DataFrame()
 
-    # [2] 관리자 세션 초기화 (오류 방지)
+    # [2] 관리자 세션 상태 초기화
     if 'is_admin' not in st.session_state:
         st.session_state['is_admin'] = False
 
-    # [3] 관리자 인증 (사이드바)
+    # [3] 관리자 인증 (사이드바 메뉴)
     with st.sidebar:
         st.write("---")
         if not st.session_state['is_admin']:
-            admin_pw = st.text_input("마스터 비밀번호", type="password", key="admin_key")
+            admin_pw = st.text_input("마스터 비밀번호", type="password", help="관리자 전용")
             if st.button("관리자 인증"):
-                if admin_pw == "0000": # 👈 비밀번호는 여기서 수정!
+                if admin_pw == "0000": # 👈 원하시는 마스터 비밀번호로 바꾸세요!
                     st.session_state['is_admin'] = True
                     st.rerun()
+                else:
+                    st.error("❌ 비밀번호가 틀렸습니다.")
         else:
-            st.success("🔓 관리자 모드")
+            st.success("🔓 관리자 모드 작동 중")
             if st.button("로그아웃"):
                 st.session_state['is_admin'] = False
                 st.rerun()
 
-    # [4] 새 글 작성 폼 (이게 보여야 정상입니다!)
+    # [4] 새 글 작성 폼
     with st.expander("📝 새 방명록 쓰기", expanded=True):
         with st.form("new_message", clear_on_submit=True):
             user_name = st.text_input("작성자")
             user_msg = st.text_area("내용")
-            user_pin = st.text_input("핀번호(4자리)", type="password")
+            user_pin = st.text_input("핀번호(4자리)", type="password", help="비밀글을 확인할 때 필요합니다.")
             
             if st.form_submit_button("등록하기"):
                 if user_name and user_msg and user_pin:
-                    now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-                    # 시트에 저장 (작성자, 내용, 작성시간, 비밀번호 순서)
-                    target_ws.append_row([user_name, user_msg, now_str, user_pin])
-                    st.success("메시지가 등록되었습니다!")
+                    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    # 구글 시트에 바로 한 줄 추가
+                    ws_guestbook.append_row([user_name, user_msg, now_str, user_pin])
+                    st.success("메시지가 안전하게 등록되었습니다!")
                     st.rerun()
                 else:
-                    st.warning("모든 항목을 입력해주세요.")
+                    st.warning("모든 항목을 빠짐없이 입력해주세요.")
 
     st.divider()
 
-    # [5] 목록 출력
+    # [5] 메시지 목록 출력 (말풍선 디자인)
     st.subheader("📋 메시지 목록")
     if df_gb.empty:
-        st.info("아직 등록된 메시지가 없습니다. 첫 번째 주인공이 되어보세요!")
+        st.info("아직 등록된 메시지가 없습니다. 첫 글을 남겨보세요!")
     else:
-        # 데이터가 있다면 최신순으로 한 줄씩 출력
-        for i, row in df_gb.iloc[::-1].iterrows():
-            with st.chat_message("user", avatar="👤"):
-                # .get()을 사용해 컬럼명이 달라도 에러 안 나게 방어
+        # 최신 글이 위로 오도록 역순 정렬
+        df_gb_display = df_gb.iloc[::-1] 
+        
+        for i, row in df_gb_display.iterrows():
+            # 관리자면 열쇠 아이콘, 일반 유저면 사람 아이콘
+            avatar_icon = "🔑" if st.session_state['is_admin'] else "👤"
+            
+            with st.chat_message("user", avatar=avatar_icon):
+                # 안전하게 데이터 가져오기 (.get 사용)
                 w = row.get('작성자', '익명')
                 c = row.get('내용', '')
                 t = row.get('작성시간', '')
                 p = str(row.get('비밀번호', ''))
 
-                st.write(f"**{w}** 님의 메시지 ({t})")
+                st.markdown(f"**{w}** <small>({t})</small>", unsafe_allow_html=True)
                 
                 if st.session_state['is_admin']:
-                    st.info(f"🔓 {c} (PIN: {p})")
+                    # 관리자는 핀번호 없이 모든 글 프리패스!
+                    st.info(f"🔓 {c}")
+                    st.caption(f"🔑 설정된 PIN: {p}")
                 else:
-                    # 핀번호 입력창
-                    input_pin = st.text_input("PIN 입력", type="password", key=f"gb_{i}", label_visibility="collapsed")
+                    # 일반 사용자는 핀번호 입력
+                    input_pin = st.text_input("PIN 입력", type="password", key=f"gb_pin_{i}", label_visibility="collapsed", placeholder="PIN 번호 4자리")
+                    
                     if input_pin == p:
                         st.success(f"🔓 {c}")
                     elif input_pin == "":
