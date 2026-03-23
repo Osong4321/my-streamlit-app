@@ -248,24 +248,19 @@ elif menu == "📅 시험 일정 관리":
 
     with col2:
         is_pending = status in ["대기 중", "보류"]
-        # ⭐ 신규 추가: 시험지시일
-        instruction_date = st.date_input("6. 시험지시일 (실제 지시 받은 날짜)")
-        # 기존 시작일
-        test_date = st.date_input("7. 시험일자 (실제 시험 시작일)", disabled=is_pending)
+        instruction_date = st.date_input("6. 시험지시일")
+        test_date = st.date_input("7. 시험시작일", disabled=is_pending)
         add_incubation = st.checkbox("➕ 추가 배양 진행 (선택 시 4일 연장)") if test_item == "무균시험" else False
-        deadline_date = st.date_input("8. 마감 기한 (목표 종료일)")
+        deadline_date = st.date_input("8. 마감 기한")
         
         if sample_type != "선택해주세요" and test_item != "검체를 먼저 선택하세요":
             if is_pending:
                 time_status, color, end_date_str = f"{status} 🔴", "#FF4B4B", "미정"
                 save_start, save_end = "-", "-"
-                qct_display = "미정"
-                qct_days = 0
+                qct_display, qct_days = "미정", 0
             else:
                 days = 18 if add_incubation else 14 if test_item == "무균시험" else 0
                 end_date = test_date + timedelta(days=days)
-                
-                # ⭐ QCT 계산: 예상종료일 - 시험지시일
                 qct_days = (end_date - instruction_date).days
                 
                 time_status = "초과 🔴" if end_date > deadline_date else "준수 🟢"
@@ -274,30 +269,29 @@ elif menu == "📅 시험 일정 관리":
                 save_start, save_end = test_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')
                 qct_display = f"{qct_days}일"
             
-            # 예상 종료일 및 QCT 출력
             st.markdown(f"""
                 <div style='background-color: #f0f2f6; padding: 15px; border-radius: 10px; border-left: 5px solid {color};'>
                     <h3 style='margin:0; color: {color};'>{time_status} 예상 종료일 : {end_date_str}</h3>
-                    <h4 style='margin:5px 0 0 0; color: #31333F;'>⏱️ QCT (지시일~종료일): {qct_display}</h4>
+                    <h4 style='margin:5px 0 0 0; color: #31333F;'>⏱️ QCT: {qct_display}</h4>
                 </div>
             """, unsafe_allow_html=True)
             
             if st.button("💾 이 일정 기록 저장하기"):
                 if batch_no.strip() and tester.strip():
-                    # ⭐ save_schedule 함수에 instruction_date와 qct_days 추가 (함수 정의에 맞춰 순서 조정 필요)
+                    # ⭐ 요청하신 순서대로 save_schedule 함수에 인자 전달
                     save_schedule(
-                        batch_no, 
-                        tester, 
-                        sample_type, 
-                        test_item, 
-                        status, 
-                        save_start, 
-                        "O" if add_incubation else "X", 
-                        save_end, 
-                        deadline_date.strftime('%Y-%m-%d'), 
-                        time_status,
-                        instruction_date.strftime('%Y-%m-%d'), # 추가
-                        qct_days # 추가
+                        batch_no.strip(),                               # 1. Batch No.
+                        tester.strip(),                                 # 2. 시험자
+                        sample_type,                                    # 3. 시험검체
+                        test_item,                                      # 4. 시험항목
+                        status,                                         # 5. 진행여부
+                        instruction_date.strftime('%Y-%m-%d'),          # 6. 시험지시일
+                        save_start,                                     # 7. 시험시작일
+                        "O" if add_incubation else "X",                 # 8. 추가배양
+                        save_end,                                       # 9. 예상종료일
+                        deadline_date.strftime('%Y-%m-%d'),             # 10. 마감기한
+                        time_status,                                    # 11. 기한상태
+                        qct_days                                        # 12. QCT
                     )
                     st.toast('성공적으로 저장되었습니다!', icon='✅')
                     time.sleep(1)
@@ -311,53 +305,36 @@ elif menu == "📅 시험 일정 관리":
     with tab1:
         st.subheader("🔍 조건별 일정 검색")
         df_search = load_data(ws_schedule)
-        
         if not df_search.empty:
-            s_col1, s_col2 = st.columns([1, 2])
-            with s_col1:
-                search_keyword = st.text_input("Batch No. 검색 (단어 포함)", placeholder="예: MFT031")
-            with s_col2:
-                filter_dates = st.date_input("기간 조회 (시작일 ~ 종료일)", value=[], key="date_filter")
+            # ⭐ 조회 화면에서도 요청하신 순서대로 열 정렬
+            cols_order = ["Batch No.", "시험자", "시험검체", "시험항목", "진행여부", "시험지시일", "시험시작일", "추가배양", "예상종료일", "마감기한", "기한상태", "QCT"]
+            df_search = df_search[cols_order] # 순서 재배치
             
-            filtered_df = df_search.copy()
-            if search_keyword:
-                filtered_df = filtered_df[filtered_df['Batch No.'].astype(str).str.contains(search_keyword, case=False, na=False)]
-            
-            if len(filter_dates) == 2:
-                filtered_df['시험일자(계산용)'] = pd.to_datetime(filtered_df['시험시작일'], errors='coerce')
-                start_dt, end_dt = filter_dates
-                mask = (filtered_df['시험일자(계산용)'].dt.date >= start_dt) & (filtered_df['시험일자(계산용)'].dt.date <= end_dt)
-                filtered_df = filtered_df.loc[mask].drop(columns=['시험일자(계산용)'])
-            
-            st.write(f"검색 결과: 총 **{len(filtered_df)}** 건")
+            search_keyword = st.text_input("Batch No. 검색", placeholder="예: LP24001")
+            filtered_df = df_search[df_search['Batch No.'].astype(str).str.contains(search_keyword, case=False, na=False)] if search_keyword else df_search.copy()
             st.dataframe(filtered_df.iloc[::-1], use_container_width=True, hide_index=True)
 
     with tab2:
         st.subheader("🛠️ 전체 일정 수정 및 삭제")
         df_manage = load_data(ws_schedule)
-        
         if not df_manage.empty:
-            df_reversed = df_manage.iloc[::-1].reset_index(drop=True)
-            # ⭐ 날짜 컬럼 리스트에 '시험지시일' 추가
-            date_columns = ["시험지시일", "시험시작일", "예상종료일", "마감기한"]
+            # ⭐ 관리 화면에서도 요청하신 순서대로 열 정렬
+            cols_order = ["Batch No.", "시험자", "시험검체", "시험항목", "진행여부", "시험지시일", "시험시작일", "추가배양", "예상종료일", "마감기한", "기한상태", "QCT"]
+            df_manage = df_manage[cols_order]
             
+            df_reversed = df_manage.iloc[::-1].reset_index(drop=True)
+            date_columns = ["시험지시일", "시험시작일", "예상종료일", "마감기한"]
             for col in date_columns:
-                if col in df_reversed.columns:
-                    df_reversed[col] = pd.to_datetime(df_reversed[col], errors='coerce').dt.date
+                df_reversed[col] = pd.to_datetime(df_reversed[col], errors='coerce').dt.date
             
             edited_df = st.data_editor(
                 df_reversed,
                 use_container_width=True,
                 num_rows="dynamic",
                 column_config={
-                    "기록시간": None, 
-                    "진행여부": st.column_config.SelectboxColumn("진행여부", options=["대기 중", "진행 중", "완료", "보류"], required=True),
-                    "기한상태": st.column_config.SelectboxColumn("기한상태", options=["준수 🟢", "초과 🔴", "대기 중 🟡", "보류 🔴"], required=True),
-                    "시험지시일": st.column_config.DateColumn("시험지시일", format="YYYY-MM-DD"),
-                    "시험시작일": st.column_config.DateColumn("시험시작일", format="YYYY-MM-DD"),
-                    "예상종료일": st.column_config.DateColumn("예상종료일", format="YYYY-MM-DD"),
-                    "마감기한": st.column_config.DateColumn("마감기한", format="YYYY-MM-DD"),
-                    "QCT": st.column_config.NumberColumn("QCT (일)", help="종료일 - 지시일")
+                    "진행여부": st.column_config.SelectboxColumn("진행여부", options=["대기 중", "진행 중", "완료", "보류"]),
+                    "기한상태": st.column_config.SelectboxColumn("기한상태", options=["준수 🟢", "초과 🔴", "대기 중 🟡", "보류 🔴"]),
+                    "QCT": st.column_config.NumberColumn("QCT", help="종료일 - 지시일")
                 },
                 key="schedule_editor"
             )
@@ -365,10 +342,10 @@ elif menu == "📅 시험 일정 관리":
             if st.button("💾 변경사항 안전하게 덮어쓰기", type="primary"):
                 final_df = edited_df.iloc[::-1].copy()
                 for col in date_columns:
-                    if col in final_df.columns:
-                        final_df[col] = final_df[col].apply(lambda x: x.strftime('%Y-%m-%d') if pd.notnull(x) else "-")
+                    final_df[col] = final_df[col].apply(lambda x: x.strftime('%Y-%m-%d') if pd.notnull(x) else "-")
                 
                 ws_schedule.clear()
+                # 헤더와 데이터를 요청하신 12개 순서 그대로 저장
                 ws_schedule.update([final_df.columns.values.tolist()] + final_df.values.tolist())
                 st.success("✅ 변경사항이 구글 시트에 저장되었습니다!")
                 time.sleep(1)
