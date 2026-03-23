@@ -1,4 +1,5 @@
 import streamlit as st
+from PIL import Image # 이미지 파일을 읽기 위해 필요
 import pandas as pd
 from datetime import datetime, timedelta, time
 import time as tm
@@ -7,18 +8,20 @@ import json
 import gspread
 from google.oauth2.service_account import Credentials
 
-# 관리자 인증 상태를 기억하기 위한 변수 설정
-if 'is_admin' not in st.session_state:
-    st.session_state['is_admin'] = False
 
 # =========================================================================
 # 1. 페이지 기본 설정
 # =========================================================================
+# [중요] 모든 Streamlit 함수 중 가장 먼저 딱 한 번만 실행되어야 합니다.
 st.set_page_config(
-    page_title="ATLAS 시험일정 자동화",
-    page_icon="🧪",
-    layout="wide"
+    page_title="ATLAS - QC 시험일정 자동화", # 브라우저 탭에 뜰 제목
+    page_icon="🧪",                       # 브라우저 탭 아이콘 (🔬 또는 🧪 중 선택)
+    layout="wide"                         # 넓은 화면 모드
 )
+
+# 관리자 인증 상태를 기억하기 위한 변수 설정
+if 'is_admin' not in st.session_state:
+    st.session_state['is_admin'] = False
 
 # =========================================================================
 # 2. 구글 시트 연결 (CSV 완전 대체)
@@ -63,17 +66,57 @@ def save_guestbook(name, msg):
 # =========================================================================
 # 4. 사이드바 구성
 # =========================================================================
-st.sidebar.title("ATLAS 메뉴")
-menu = st.sidebar.radio("이동할 페이지를 선택하세요:", 
-                        [
-                            "🏠 홈 (Home)", 
-                            "📊 대시보드 (Dashboard)", 
-                            "📅 시험 일정 관리", 
-                            "📝 공정 기록 등록",      
-                            "🛠️ 공정별 일정 현황",     
-                            "🗣️ 방명록 (Guestbook)"
-                        ])
+st.markdown(
+    """
+    <style>
+    /* 1. 사이드바 내부를 위아래로 나누기 위한 설정 */
+    [data-testid="stSidebarContent"] {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+    }
 
+    /* 2. 하단 로고 컨테이너 (맨 아래로 밀어내기) */
+    .sidebar-footer {
+        margin-top: auto; /* 상단 메뉴들과의 거리를 최대로 벌려 맨 아래로 밀어냄 */
+        padding: 20px;
+        text-align: center;
+        border-top: 1px solid rgba(0, 0, 0, 0.05); /* 경계선만 살짝 추가 */
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# --- [구성] 사이드바 내용 ---
+with st.sidebar:
+    # [1] 상단 제목 및 메뉴
+    st.title("🔬 ATLAS")
+    st.write("---")
+
+    menu = st.radio(
+        "이동할 페이지를 선택하세요:", 
+        [
+            "🏠 홈 (Home)", 
+            "📊 대시보드 (Dashboard)", 
+            "📅 시험 일정 관리", 
+            "📝 공정 기록 등록",      
+            "🛠️ 공정별 일정 현황",     
+            "🗣️ 방명록 (Guestbook)"
+        ]
+    )
+
+    # [2] ⭐ 하단 로고 이미지 (CI.png) ⭐
+    # CSS의 margin-top: auto 덕분에 메뉴가 적어도 항상 맨 아래에 붙습니다.
+    st.markdown('<div class="sidebar-footer">', unsafe_allow_html=True)
+    try:
+        # 하단에 CI 로고 표시
+        st.image("CI.png", use_container_width=True) 
+        st.caption("© 2026 Daewoong Luphere QC Team")
+    except:
+        # 이미지가 없을 때를 대비한 텍스트 출력
+        st.markdown("### 🏢 Daewoong Luphere QC")
+    st.markdown('</div>', unsafe_allow_html=True)
 # =========================================================================
 # 5. 메인 화면 구성
 # =========================================================================
