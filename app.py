@@ -314,17 +314,16 @@ if menu == "📅 시험 일정 관리":
     # 12개 컬럼 순서 정의
     cols_order = ["Batch No.", "시험자", "시험검체", "시험항목", "진행여부", "시험지시일", "시험시작일", "추가배양", "예상종료일", "마감기한", "기한상태", "QCT"]
 
-    with tab1:
+with tab1:
         st.subheader("🔍 조건별 일정 검색")
         
-        # 1. 데이터 불러오기
+        # 1. 데이터 불러오기 및 자동 계산
         df_raw = load_data(ws_schedule)
         
         if not df_raw.empty:
-            # 제목 공백 제거
             df_raw.columns = [c.strip() for c in df_raw.columns]
             
-            # [자동 계산] 로딩 즉시 QCT 계산 (시트에 없어도 앱에서 계산)
+            # [자동 계산] 로딩 즉시 QCT 계산
             t_end = pd.to_datetime(df_raw['예상종료일'], errors='coerce')
             t_inst = pd.to_datetime(df_raw['시험지시일'], errors='coerce')
             df_raw['QCT'] = (t_end - t_inst).dt.days.fillna(0).astype(int)
@@ -334,26 +333,41 @@ if menu == "📅 시험 일정 관리":
             with s_col1:
                 search_keyword = st.text_input("Batch No. 검색", placeholder="예: LP24001", key="search_bar")
             with s_col2:
-                # 기간 조회 기본값을 빈 리스트[]로 두어 처음엔 전체가 나오게 설정
                 filter_dates = st.date_input("기간 조회 (지시일 기준)", value=[], key="date_filter")
             
-            # 3. 데이터 필터링 시작 (원본은 건드리지 않고 복사본 df_display 사용)
+            # 3. 데이터 필터링
             actual_cols = [c for c in cols_order if c in df_raw.columns]
             df_display = df_raw[actual_cols].copy()
             
-            # 키워드 필터링
             if search_keyword:
                 df_display = df_display[df_display['Batch No.'].astype(str).str.contains(search_keyword, case=False, na=False)]
             
-            # 날짜 범위 필터링
             if len(filter_dates) == 2:
                 df_display['지시일_dt'] = pd.to_datetime(df_display['시험지시일'], errors='coerce')
                 s_dt, e_dt = filter_dates
                 mask = (df_display['지시일_dt'].dt.date >= s_dt) & (df_display['지시일_dt'].dt.date <= e_dt)
                 df_display = df_display.loc[mask].drop(columns=['지시일_dt'])
+
+            st.write("---")
+
+            # ⭐ [핵심 추가] 요약 지표 (평균 QCT 계산)
+            if not df_display.empty:
+                # QCT 평균 계산 (소수점 첫째자리까지)
+                avg_qct = df_display['QCT'].mean()
+                total_count = len(df_display)
+                
+                # 지표를 예쁘게 보여주기 위한 컬럼 배치
+                m1, m2, m3 = st.columns(3)
+                m1.metric("📊 조회 건수", f"{total_count} 건")
+                m2.metric("⏱️ 평균 QCT", f"{avg_qct:.1f} 일")
+                
+                # QCT가 가장 길었던 '최대값'도 보너스로 추가해봤습니다!
+                max_qct = df_display['QCT'].max()
+                m3.metric("⚠️ 최대 소요 기간", f"{max_qct} 일")
+                
+                st.write("") # 간격 조절
             
-            # 4. 최종 결과만 출력 (원본 데이터 출력 코드 삭제 완료!)
-            st.write(f"조회 결과: 총 **{len(df_display)}** 건")
+            # 4. 최종 결과 리스트 출력
             st.dataframe(df_display.iloc[::-1], use_container_width=True, hide_index=True)
             
         else:
