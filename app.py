@@ -493,8 +493,8 @@ elif menu == "🛠️ 공정별 일정 현황":
                 st.caption(f"🔍 검색된 배치: {', '.join(search_batches)}")
             st.dataframe(styled_wide_df, use_container_width=True)
 
-elif menu == "💌 방명록":
-    st.title("💌 ATLAS 방명록")
+elif menu == "🗣️ 방명록 (Guestbook)":
+    st.title("🗣️ 방명록 (Guestbook)")
 
     # [1] 방명록 전용 시트 연결 (변수가 없을 경우를 대비해 여기서 직접 연결)
     try:
