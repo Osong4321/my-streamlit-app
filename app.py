@@ -100,6 +100,7 @@ with st.sidebar:
             "🏠 홈 (Home)", 
             "📅 시험 일정 관리", 
             "📊 대시보드 (Dashboard)", 
+            "📖 마스터 가이드",
             "📝 공정 기록 등록",      
             "🛠️ 공정별 일정 현황",     
             "🗣️ 방명록 (Guestbook)"
@@ -441,6 +442,87 @@ if menu == "📅 시험 일정 관리":
                 st.success("✅ 변경사항이 구글 시트에 저장되었습니다!")
                 time.sleep(1)
                 st.rerun()
+
+elif menu == "📖 마스터 가이드":
+    st.title("📖 미생물 시험 마스터 가이드")
+    st.info("💡 검체별 필수 시험 항목 및 안정성 주기를 확인하는 공식 마스터 리스트입니다.")
+
+    # 1. 데이터 구성 (차석님이 주신 리스트 완벽 반영)
+    master_list = [
+        ["원료", "폴리(디엘-락티드)", "02A1001191", "MLT, endotoxin", "-", "-"],
+        ["원료", "Trypticsoy broth(Liquid)(Synergi)", "1300281", "GPT", "-", "-"],
+        ["원료", "Tryptic soy broth", "1000488", "GPT", "-", "-"],
+        ["원료", "Leuprolide Acetate(PPL, India)", "1000325", "MLT, endotoxin", "-", "-"],
+        ["원료", "세마글루티드", "3300311", "MLT, endotoxin", "-", "E.coli"],
+        ["원료", "D-Mannitol (Pyrogen Free)", "1000026", "MLT, endotoxin", "-", "E.coli"],
+        ["원료", "Gelatin", "1001175", "MLT", "-", "E.coli, Salmonella"],
+        ["원료", "Hydroxypropyl betadex(EP,Ashland)", "1301096", "MLT, endotoxin", "-", "E.coli, Salmonella"],
+        ["자재", "LEU Syringe 104mm(블루잉크제외)", "2303718", "Sterility", "-", "-"],
+        ["자재", "LLA Big", "2004102", "Sterility", "-", "-"],
+        ["자재", "LLA Big(임상)", "4302447", "Sterility", "-", "-"],
+        ["자재", "LEU Glass Syringe Barel 104mm", "4302270", "Sterility", "-", "-"],
+        ["자재", "루피어데포주 3.75mg 24게이지 니들", "2001268", "Sterility", "-", "-"],
+        ["자재", "Needle 23G 1-1/2 IN FLT (임상)(멸균)", "4302117", "Sterility", "-", "-"],
+        ["자재", "Needle 23G 1-1/2 IN FLT (멸균)", "2302374", "Sterility", "-", "-"],
+        ["자재", "LEU Syringe 104mm", "2004101", "Sterility", "-", "-"],
+        ["자재", "루피어데포주 3.75mg PP 마개", "2001274", "Sterility", "-", "-"],
+        ["자재", "Needle 23G 1IN RB_TW (멸균)", "2302293", "Sterility", "-", "-"],
+        ["자재", "루피어데포주 3.75mg 테프론 고무전", "2300927", "endotoxin", "-", "-"],
+        ["제품", "DWJ1483 3.75mg(류프로렐린)", "9301926", "Sterility, endotoxin", "-", "-"],
+        ["제품", "루피어데포주 3.75mg 완제", "9000226", "Sterility", "-", "-"],
+        ["제품", "루피어데포주 3.75mg 임상_YoungPEAL", "9300104", "Sterility", "-", "-"],
+        ["제품", "DWP1401 2주 위약", "4302132", "Sterility, endotoxin", "-", "-"],
+        ["제품", "DWP1401 2주 시험약", "4302131", "Sterility, endotoxin", "-", "-"],
+        ["공정", "DWJ108U 30mg(류프로라이드)", "9300842", "Sterility, endotoxin", "-", "-"],
+        ["공정", "루피어데포주 3.75mg 반제품", "8000101", "Sterility", "-", "-"],
+        ["안정성", "루피어데포주 3.75mg 완제(시판후)", "9000226", "Sterility", "0, 12, 18, 24", "-"],
+        ["안정성", "루피어데포주 3.75mg 완제(장기)", "9000226", "Sterility", "0, 12, 24", "-"],
+        ["안정성", "Needle 23G 1-1/2 IN (멸균) 안정성", "2302374", "Sterility", "0, 6, 12, 24, 36", "-"],
+        ["안정성", "Needle 23G 1IN RB_TW (멸균) 안정성", "2302374", "Sterility", "0, 6, 12, 24, 36", "-"],
+        ["안정성", "DWP1401 2주 위약(장기)", "4302132", "Sterility, endotoxin", "0, 3, 12, 24, 36", "-"],
+        ["안정성", "DWP1401 2주 시험약(장기)", "4302131", "Sterility, endotoxin", "0, 3, 12, 24, 36", "-"],
+        ["안정성", "DWP1401 2주 위약(가속)", "4302132", "Sterility, endotoxin", "0, 1, 3, 6", "-"],
+        ["안정성", "DWP1401 2주 시험약(가속)", "4302131", "Sterility, endotoxin", "0, 1, 3, 6", "-"]
+    ]
+    
+    df_guide = pd.DataFrame(master_list, columns=["구분", "검체명", "품목코드", "필수시험", "주기", "특정미생물"])
+
+    # 2. 필터 및 검색 UI
+    c1, c2, c3 = st.columns([1, 1, 2])
+    with c1:
+        sel_cat = st.multiselect("구분별 필터", options=df_guide["구분"].unique(), default=df_guide["구분"].unique())
+    with c2:
+        sel_test = st.multiselect("시험별 필터", options=["Sterility", "MLT", "endotoxin", "GPT"], default=[])
+    with c3:
+        search_text = st.text_input("검체명 또는 품목코드 검색", placeholder="예: 루피어, 9000226")
+
+    # 3. 데이터 필터링 로직
+    filtered_df = df_guide[df_guide["구분"].isin(sel_cat)]
+    
+    if sel_test:
+        # 선택한 시험 항목이 포함된 행만 필터링
+        mask = filtered_df["필수시험"].apply(lambda x: any(test in x for test in sel_test))
+        filtered_df = filtered_df[mask]
+        
+    if search_text:
+        filtered_df = filtered_df[
+            filtered_df["검체명"].str.contains(search_text, case=False) | 
+            filtered_df["품목코드"].str.contains(search_text)
+        ]
+
+    # 4. 결과 출력
+    st.write(f"🔍 총 **{len(filtered_df)}** 개의 항목이 검색되었습니다.")
+    st.dataframe(filtered_df, use_container_width=True, hide_index=True)
+
+    # 💡 하단 팁
+    st.markdown("""
+    ---
+    ### 📝 마스터 데이터 관리 가이드
+    * **안정성 시험**: 주기(Month)별로 시험이 계획되어야 합니다.
+    * **MLT 대상**: '특정미생물' 컬럼에 명시된 균주 시험이 누락되지 않도록 주의하세요.
+    * **품목코드**: 시스템 연동의 핵심 키값입니다. 정확하게 입력되었는지 확인하세요.
+    """)
+
 
 elif menu == "📝 공정 기록 등록":
     st.title("📝 공정별 작업 시간 기록")
