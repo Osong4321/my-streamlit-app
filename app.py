@@ -445,9 +445,9 @@ if menu == "📅 시험 일정 관리":
 
 elif menu == "📖 마스터 가이드":
     st.title("📖 미생물 시험 마스터 가이드")
-    st.info("💡 검체별 필수 시험 항목 및 안정성 주기를 확인하는 공식 마스터 리스트입니다.")
+    st.info("💡 필터를 선택하지 않으면 전체 목록이 나타납니다.")
 
-    # 1. 데이터 구성 (차석님이 주신 리스트 완벽 반영)
+    # 1. 데이터 구성 (기존 데이터 유지)
     master_list = [
         ["원료", "폴리(디엘-락티드)", "02A1001191", "MLT, endotoxin", "-", "-"],
         ["원료", "Trypticsoy broth(Liquid)(Synergi)", "1300281", "GPT", "-", "-"],
@@ -469,12 +469,12 @@ elif menu == "📖 마스터 가이드":
         ["자재", "Needle 23G 1IN RB_TW (멸균)", "2302293", "Sterility", "-", "-"],
         ["자재", "루피어데포주 3.75mg 테프론 고무전", "2300927", "endotoxin", "-", "-"],
         ["제품", "DWJ1483 3.75mg(류프로렐린)", "9301926", "Sterility, endotoxin", "-", "-"],
-        ["제품", "루피어데포주 3.75mg 완제", "9000226", "Sterility", "-", "-"],
+        ["제품", "루피어데포주 3.75MG(류프로렐린아세트산염) 완제품", "9000226", "Sterility", "-", "-"],
         ["제품", "루피어데포주 3.75mg 임상_YoungPEAL", "9300104", "Sterility", "-", "-"],
         ["제품", "DWP1401 2주 위약", "4302132", "Sterility, endotoxin", "-", "-"],
         ["제품", "DWP1401 2주 시험약", "4302131", "Sterility, endotoxin", "-", "-"],
         ["공정", "DWJ108U 30mg(류프로라이드)", "9300842", "Sterility, endotoxin", "-", "-"],
-        ["공정", "루피어데포주 3.75mg 반제품", "8000101", "Sterility", "-", "-"],
+        ["공정", "루피어데포주3.75MG(류프로렐린아세트산염) 반제품", "8000101", "Sterility", "-", "-"],
         ["안정성", "루피어데포주 3.75mg 완제(시판후)", "9000226", "Sterility", "0, 12, 18, 24", "-"],
         ["안정성", "루피어데포주 3.75mg 완제(장기)", "9000226", "Sterility", "0, 12, 24", "-"],
         ["안정성", "Needle 23G 1-1/2 IN (멸균) 안정성", "2302374", "Sterility", "0, 6, 12, 24, 36", "-"],
@@ -487,20 +487,24 @@ elif menu == "📖 마스터 가이드":
     
     df_guide = pd.DataFrame(master_list, columns=["구분", "검체명", "품목코드", "필수시험", "주기", "특정미생물"])
 
-    # 2. 필터 및 검색 UI
+    # 2. 필터 UI
     c1, c2, c3 = st.columns([1, 1, 2])
     with c1:
-        sel_cat = st.multiselect("구분별 필터", options=df_guide["구분"].unique(), default=df_guide["구분"].unique())
+        sel_cat = st.multiselect("구분별 필터", options=df_guide["구분"].unique(), default=[]) # 기본값을 빈 리스트로
     with c2:
         sel_test = st.multiselect("시험별 필터", options=["Sterility", "MLT", "endotoxin", "GPT"], default=[])
     with c3:
         search_text = st.text_input("검체명 또는 품목코드 검색", placeholder="예: 루피어, 9000226")
 
-    # 3. 데이터 필터링 로직
-    filtered_df = df_guide[df_guide["구분"].isin(sel_cat)]
+    # 3. 데이터 필터링 로직 (스마트 필터링)
+    filtered_df = df_guide.copy()
     
+    # [수정포인트] 구분 필터가 비어있지 않을 때만 필터링 수행
+    if sel_cat:
+        filtered_df = filtered_df[filtered_df["구분"].isin(sel_cat)]
+    
+    # 시험 항목 필터가 비어있지 않을 때만 필터링 수행
     if sel_test:
-        # 선택한 시험 항목이 포함된 행만 필터링
         mask = filtered_df["필수시험"].apply(lambda x: any(test in x for test in sel_test))
         filtered_df = filtered_df[mask]
         
@@ -511,7 +515,7 @@ elif menu == "📖 마스터 가이드":
         ]
 
     # 4. 결과 출력
-    st.write(f"🔍 총 **{len(filtered_df)}** 개의 항목이 검색되었습니다.")
+    st.write(f"🔍 결과: 총 **{len(filtered_df)}** 건")
     st.dataframe(filtered_df, use_container_width=True, hide_index=True)
 
     # 💡 하단 팁
