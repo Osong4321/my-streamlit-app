@@ -47,9 +47,9 @@ ws_guestbook = doc.worksheet("방명록")
 # 3. 데이터 입출력 함수 (100% 구글 시트 전용)
 # =========================================================================
 
-def save_schedule(batch, tester, sample, item, status, inst_date, start_date, incubation, end_date, deadline, time_status, qct):
-    """시험 일정 데이터를 구글 시트에 12개 컬럼 순서로 저장하는 함수"""
-    row = [batch, tester, sample, item, status, inst_date, start_date, incubation, end_date, deadline, time_status, qct]
+def save_schedule(category, p_code, batch, tester, sample, point, item, spec_bug, status, inst_date, start_date, add_incub, end_date, deadline, time_status, qct):
+    # 16개 열 순서대로 리스트 생성
+    row = [category, p_code, batch, tester, sample, point, item, spec_bug, status, inst_date, start_date, add_incub, end_date, deadline, time_status, qct]
     ws_schedule.append_row(row)
 
 def load_data(worksheet):
@@ -100,7 +100,7 @@ with st.sidebar:
             "🏠 홈 (Home)", 
             "📅 시험 일정 관리", 
             "📊 대시보드 (Dashboard)", 
-            "📖 마스터 가이드",
+            "📖 항목 마스터 리스트",
             "📝 공정 기록 등록",      
             "🛠️ 공정별 일정 현황",     
             "🗣️ 방명록 (Guestbook)"
@@ -233,218 +233,214 @@ elif menu == "📊 대시보드 (Dashboard)":
             except Exception as e:
                 st.error(f"일정표를 구성하는 중 오류가 발생했습니다: {e}")
                 
-if menu == "📅 시험 일정 관리":
-    st.title("📅 시험 일정 자동 계산 및 기록")
-    
+elif menu == "📅 시험 일정 관리":
+    st.title("📅 시험 일정 자동 계산 및 기록 (16열 시스템)")
+
+    # [마스터 데이터 정의 - 가이드 탭과 동일하게 유지]
+    master_data_list = [
+        ["원료", "폴리(디엘-락티드)", "02A1001191", "MLT, endotoxin", "-", "-"],
+        ["원료", "세마글루티드", "3300311", "MLT, endotoxin", "-", "E.coli"],
+        ["자재", "LEU Syringe 104mm(블루)", "2303718", "Sterility", "-", "-"],
+        ["제품", "루피어데포주 3.75mg 완제", "9000226", "Sterility", "-", "-"],
+        ["안정성", "루피어데포주(시판후)", "9000226", "Sterility", "0, 12, 18, 24", "-"],
+        ["기타", "기타(직접 입력)", "-", "Sterility, MLT, endotoxin", "-", "-"]
+    ]
+    df_master = pd.DataFrame(master_data_list, columns=["구분", "검체명", "품목코드", "필수시험", "주기", "특정미생물"])
+
     col1, col2 = st.columns(2)
     with col1:
-        batch_no = st.text_input("1. Batch No.를 입력하세요", placeholder="예: LP24001")
-        tester = st.text_input("2. 시험자를 입력하세요", placeholder="예: 홍길동")
-        sample_type = st.selectbox("3. 시험검체를 선택하세요", ["선택해주세요", "루피어데포주", "DWJ1483포장전", "DWJ1483포장후", "루피어에멀전", "자재", "기타"])
+        # 1~5번 입력
+        sample_options = ["선택해주세요"] + sorted(df_master["검체명"].unique().tolist())
+        sample_type = st.selectbox("1. 시험검체를 선택하세요", sample_options)
         
-        test_items = ["무균시험", "엔도톡신시험"] if sample_type in ["루피어에멀전", "DWJ1483포장후", "기타"] else ["무균시험"]
-        if sample_type == "선택해주세요": test_items = ["검체를 먼저 선택하세요"]
+        # 마스터 데이터 연동 (검체 선택 시 품목코드, 구분 자동 추출)
+        if sample_type != "선택해주세요":
+            target_row = df_master[df_master["검체명"] == sample_type].iloc[0]
+            current_cat = target_row["구분"]
+            current_code = target_row["품목코드"]
+            current_spec = target_row["특정미생물"]
+            
+            # 🆕 시점(Point) 처리
+            point_options = ["-"]
+            if current_cat == "안정성":
+                point_options = [p.strip() + "M" for p in str(target_row["주기"]).split(',')]
+            
+            # 시험 항목 리스트 생성
+            base_tests = [t.strip() for t in str(target_row["필수시험"]).split(',')]
+            if sample_type == "기타(직접 입력)":
+                base_tests = ["Sterility", "MLT", "endotoxin", "GPT", "직접 입력"]
+        else:
+            current_cat, current_code, current_spec = "-", "-", "-"
+            point_options = ["-"]
+            base_tests = ["검체를 먼저 선택하세요"]
+
+        batch_no = st.text_input("2. Batch No.를 입력하세요", placeholder="예: LP24001")
+        tester = st.text_input("3. 시험자를 입력하세요", placeholder="예: 홍길동")
         
-        test_item = st.selectbox("4. 시험항목을 선택하세요", test_items)
-        status = st.selectbox("5. 시험 진행 여부", ["대기 중", "진행 중", "완료", "보류"])
+        # 🆕 시점 및 특정미생물 확인
+        c1, c2 = st.columns(2)
+        with c1: point = st.selectbox("4. 시험 시점", point_options)
+        with c2: test_item = st.selectbox("5. 시험항목", base_tests)
+        
+        status = st.selectbox("6. 진행 여부", ["대기 중", "진행 중", "완료", "보류"])
 
     with col2:
+        # 7~10번 입력 및 계산
+        instruction_date = st.date_input("7. 시험지시일")
         is_pending = status in ["대기 중", "보류"]
-        # 날짜 입력 (시간 정보 없음)
-        instruction_date = st.date_input("6. 시험지시일")
-        test_date = st.date_input("7. 시험시작일", disabled=is_pending)
-        add_incubation = st.checkbox("➕ 추가 배양 진행 (선택 시 4일 연장)") if test_item == "무균시험" else False
-        deadline_date = st.date_input("8. 마감 기한")
+        test_date = st.date_input("8. 시험시작일", disabled=is_pending)
+        deadline_date = st.date_input("9. 마감 기한")
         
-        if sample_type != "선택해주세요" and test_item != "검체를 먼저 선택하세요":
-            # [1] 날짜 계산 시작
+        add_incubation = st.checkbox("➕ 추가 배양(4일 연장)") if "Sterility" in test_item else False
+        
+        # 날짜 계산 로직
+        if sample_type != "선택해주세요":
+            days = 0
+            if "Sterility" in test_item: days = 18 if add_incubation else 14
+            elif "MLT" in test_item: days = 7
+            
             if is_pending:
-                time_status, color, end_date_str = f"{status} 🔴", "#FF4B4B", "미정"
+                end_date_str, qct_days, color, time_status = "미정", 0, "#FF4B4B", f"{status} 🔴"
                 save_start, save_end = "-", "-"
-                qct_days = 0  # 대기/보류 시 0으로 초기화
             else:
-                # 무균시험 배양 기간 계산 (14일 혹은 18일)
-                days = 18 if add_incubation else 14 if test_item == "무균시험" else 0
                 end_date = test_date + timedelta(days=days)
-                
-                # ⭐ 핵심: QCT 계산 (예상종료일 - 시험지시일)
-                # .days를 붙여야 '14 days'가 아닌 숫자 '14'만 남습니다.
+                end_date_str = end_date.strftime('%Y-%m-%d')
                 qct_days = (end_date - instruction_date).days
-                
                 time_status = "초과 🔴" if end_date > deadline_date else "준수 🟢"
                 color = "#FF4B4B" if end_date > deadline_date else "#00CC96"
-                
-                end_date_str = end_date.strftime('%Y-%m-%d')
-                save_start = test_date.strftime('%Y-%m-%d')
-                save_end = end_date_str
-            
-            # [2] 화면 표시 (사용자가 저장 전 미리 확인)
+                save_start, save_end = test_date.strftime('%Y-%m-%d'), end_date_str
+
+            # 안내 박스
             st.markdown(f"""
                 <div style='background-color: #f0f2f6; padding: 15px; border-radius: 10px; border-left: 5px solid {color};'>
-                    <h3 style='margin:0; color: {color};'>{time_status} 예상 종료일 : {end_date_str}</h3>
-                    <h4 style='margin:5px 0 0 0; color: #31333F;'>⏱️ QCT (지시일~종료일): {qct_days if not is_pending else "미정"}일</h4>
+                    <p style='margin:0;'>📊 <b>구분:</b> {current_cat} | <b>코드:</b> {current_code}</p>
+                    <h3 style='margin:10px 0; color: {color};'>{time_status} 예상 종료: {end_date_str}</h3>
+                    <h4 style='margin:0;'>⏱️ QCT: {qct_days}일</h4>
                 </div>
             """, unsafe_allow_html=True)
-            
-            # [3] 저장 버튼 클릭 시
-            if st.button("💾 이 일정 기록 저장하기"):
-                if batch_no.strip() and tester.strip():
-                    save_schedule(
-                        batch_no.strip(),
-                        tester.strip(),
-                        sample_type,
-                        test_item,
-                        status,
-                        instruction_date.strftime('%Y-%m-%d'),
-                        save_start,
-                        "O" if add_incubation else "X",
-                        save_end,
-                        deadline_date.strftime('%Y-%m-%d'),
-                        time_status,
-                        qct_days # ⭐ 계산된 QCT 숫자가 여기 들어갑니다!
-                    )
-                    st.toast('성공적으로 저장되었습니다!', icon='✅')
-                    time.sleep(1)
-                    st.rerun()
-                else:
-                    st.warning("Batch No.와 시험자를 모두 입력해주세요.")
 
+            if st.button("💾 16열 데이터로 저장하기", use_container_width=True):
+                save_schedule(
+                    current_cat, current_code, batch_no, tester, sample_type, point, test_item, current_spec,
+                    status, instruction_date.strftime('%Y-%m-%d'), save_start,
+                    "O" if add_incubation else "X", save_end,
+                    deadline_date.strftime('%Y-%m-%d'), time_status, qct_days
+                )
+                st.success("✅ 마스터 연동 데이터가 저장되었습니다!")
+                tm.sleep(1); st.rerun()
+
+# ---------------------------------------------------------
+    # [시작점] 여기서부터 교체하세요!
+    # ---------------------------------------------------------
     st.divider()
     tab1, tab2 = st.tabs(["🔍 시험 일정 검색", "🛠️ 전체 일정 관리"])
     
-    # 12개 컬럼 순서 정의
-    cols_order = ["Batch No.", "시험자", "시험검체", "시험항목", "진행여부", "시험지시일", "시험시작일", "추가배양", "예상종료일", "마감기한", "기한상태", "QCT"]
+    # ⭐ 16개 전체 컬럼 순서 정의 (구글 시트 헤더와 반드시 일치해야 함)
+    cols_order = ["구분", "품목코드", "Batch No.", "시험자", "시험검체", "시점", "시험항목", "특정미생물", "진행여부", "시험지시일", "시험시작일", "추가배양", "예상종료일", "마감기한", "기한상태", "QCT"]
 
     with tab1:
         st.subheader("🔍 일정 검색 및 체크박스 비교 분석")
         
-        # 1. 데이터 불러오기 및 자동 계산
+        # 1. 데이터 불러오기
         df_raw = load_data(ws_schedule)
         
         if not df_raw.empty:
+            # 공백 제거 및 컬럼 동기화
             df_raw.columns = [c.strip() for c in df_raw.columns]
             
-            # [자동 계산 엔진]
-            t_end = pd.to_datetime(df_raw['예상종료일'], errors='coerce')
-            t_inst = pd.to_datetime(df_raw['시험지시일'], errors='coerce')
-            df_raw['QCT'] = (t_end - t_inst).dt.days.fillna(0).astype(int)
+            # 🔥 [QCT 로직 사수] 시트에서 불러온 날짜로 QCT 재계산 (데이터 무결성 확보)
+            df_raw['예상종료일_dt'] = pd.to_datetime(df_raw['예상종료일'], errors='coerce')
+            df_raw['시험지시일_dt'] = pd.to_datetime(df_raw['시험지시일'], errors='coerce')
+            df_raw['QCT'] = (df_raw['예상종료일_dt'] - df_raw['시험지시일_dt']).dt.days.fillna(0).astype(int)
             
-            # 2. 검색 필터 UI (상단)
+            # 2. 검색 UI
             s_col1, s_col2 = st.columns([1, 2])
             with s_col1:
-                search_keyword = st.text_input("Batch No. 검색", placeholder="예: LP24001", key="search_bar_v4")
+                search_keyword = st.text_input("Batch No. 검색", placeholder="예: LP24001", key="tab1_search")
             with s_col2:
-                filter_dates = st.date_input("기간 조회 (지시일 기준)", value=[], key="date_filter_v4")
+                filter_dates = st.date_input("기간 조회 (지시일 기준)", value=[], key="tab1_date")
             
-            # 3. 데이터 필터링 (원본 검색 결과)
-            actual_cols = [c for c in cols_order if c in df_raw.columns]
-            df_filtered = df_raw[actual_cols].copy()
+            # 3. 데이터 필터링
+            df_filtered = df_raw[cols_order].copy() # 16열 순서대로 정렬
             
             if search_keyword:
                 df_filtered = df_filtered[df_filtered['Batch No.'].astype(str).str.contains(search_keyword, case=False, na=False)]
             
             if len(filter_dates) == 2:
-                df_filtered['지시일_dt'] = pd.to_datetime(df_filtered['시험지시일'], errors='coerce')
-                s_dt, e_dt = filter_dates
-                mask = (df_filtered['지시일_dt'].dt.date >= s_dt) & (df_filtered['지시일_dt'].dt.date <= e_dt)
-                df_filtered = df_filtered.loc[mask].drop(columns=['지시일_dt'])
+                start_d, end_d = filter_dates
+                mask = (df_raw['시험지시일_dt'].dt.date >= start_d) & (df_raw['시험지시일_dt'].dt.date <= end_d)
+                df_filtered = df_filtered.loc[mask]
 
             if not df_filtered.empty:
-                # --- ⭐ [핵심] 체크박스 선택 로직 ---
-                # 데이터프레임 맨 앞에 '선택' 컬럼 추가 (기본값 False)
+                # 4. 체크박스 선택 UI
                 df_with_selections = df_filtered.copy()
                 df_with_selections.insert(0, "✅ 선택", False)
                 
-                # 데이터 에디터로 체크박스가 포함된 표 출력
-                # 최신 데이터가 위로 오도록 역순 출력
                 edited_df = st.data_editor(
-                    df_with_selections.iloc[::-1],
+                    df_with_selections.iloc[::-1], # 최신순 정렬
                     hide_index=True,
                     use_container_width=True,
                     column_config={
-                        "✅ 선택": st.column_config.CheckboxColumn(
-                            "선택",
-                            help="평균 QCT 계산에 포함할 항목을 체크하세요",
-                            default=False,
-                        )
+                        "✅ 선택": st.column_config.CheckboxColumn("선택", default=False),
+                        "QCT": st.column_config.NumberColumn("QCT", format="%d 일")
                     },
-                    disabled=[col for col in df_with_selections.columns if col != "✅ 선택"], # 체크박스만 수정 가능하게 설정
-                    key="selection_editor"
+                    disabled=[col for col in df_with_selections.columns if col != "✅ 선택"],
+                    key="tab1_editor"
                 )
 
-                # 4. 분석 대상 결정 (체크된 항목이 있으면 그것만, 없으면 전체)
+                # 5. 실시간 QCT 분석 결과 표시
                 selected_rows = edited_df[edited_df["✅ 선택"] == True]
+                # 체크한 게 있으면 체크된 것만, 없으면 검색 결과 전체를 분석 대상으포 함
+                df_analysis = selected_rows if not selected_rows.empty else edited_df
                 
-                if not selected_rows.empty:
-                    df_analysis = selected_rows
-                    analysis_mode = "선택 항목"
-                    highlight_style = "inverse" # 강조용
-                else:
-                    df_analysis = edited_df
-                    analysis_mode = "조회 전체"
-                    highlight_style = "normal"
-
-                # 📊 [실시간 지표 업데이트]
-                avg_qct = df_analysis['QCT'].mean()
-                total_cnt = len(df_analysis)
-                max_qct = df_analysis['QCT'].max()
-
                 st.write("---")
-                st.markdown(f"#### 📈 {analysis_mode} 분석 결과")
+                avg_val = df_analysis['QCT'].mean()
                 m1, m2, m3 = st.columns(3)
-                m1.metric("📊 분석 건수", f"{total_cnt} 건")
-                m2.metric("⏱️ 평균 QCT", f"{avg_qct:.1f} 일")
-                m3.metric("⚠️ 최대 소요", f"{max_qct} 일")
-                
-                if not selected_rows.empty:
-                    st.caption("💡 현재 표에서 체크된 항목들만 계산된 수치입니다.")
-                else:
-                    st.caption("💡 체크박스를 선택하면 해당 항목들만의 평균을 구할 수 있습니다.")
-            
+                m1.metric("📊 분석 건수", f"{len(df_analysis)} 건")
+                m2.metric("⏱️ 평균 QCT", f"{avg_val:.1f} 일")
+                m3.metric("⚠️ 최대 소요", f"{df_analysis['QCT'].max()} 일")
+                st.caption("💡 표에서 항목을 체크하면 해당 항목들만의 평균 QCT가 계산됩니다.")
         else:
-            st.info("저장된 데이터가 없습니다.")
-            
+            st.info("기록된 데이터가 없습니다.")
+
     with tab2:
         st.subheader("🛠️ 전체 일정 수정 및 삭제")
         df_manage = load_data(ws_schedule)
         
         if not df_manage.empty:
             df_manage.columns = [c.strip() for c in df_manage.columns]
-            actual_cols = [c for c in cols_order if c in df_manage.columns]
-            df_reversed = df_manage[actual_cols].iloc[::-1].reset_index(drop=True)
+            df_reversed = df_manage[cols_order].iloc[::-1].reset_index(drop=True)
             
-            # 날짜 형식 정규화
+            # 날짜 정규화 (수정 시 달력 팝업을 위해)
             date_cols = ["시험지시일", "시험시작일", "예상종료일", "마감기한"]
             for col in date_cols:
-                if col in df_reversed.columns:
-                    df_reversed[col] = pd.to_datetime(df_reversed[col], errors='coerce').dt.date
+                df_reversed[col] = pd.to_datetime(df_reversed[col], errors='coerce').dt.date
             
-            edited_df = st.data_editor(
+            edited_m = st.data_editor(
                 df_reversed,
                 use_container_width=True,
                 num_rows="dynamic",
                 column_config={
                     "진행여부": st.column_config.SelectboxColumn("진행여부", options=["대기 중", "진행 중", "완료", "보류"]),
-                    "기한상태": st.column_config.SelectboxColumn("기한상태", options=["준수 🟢", "초과 🔴", "대기 중 🟡", "보류 🔴"]),
-                    "QCT": st.column_config.NumberColumn("QCT", help="종료일 - 지시일")
+                    "기한상태": st.column_config.SelectboxColumn("기한상태", options=["준수 🟢", "초과 🔴", "대기 중 🟡", "보류 🔴"])
                 },
-                key="schedule_editor_v3"
+                key="tab2_editor"
             )
             
-            if st.button("💾 변경사항 안전하게 덮어쓰기", type="primary"):
-                final_df = edited_df.iloc[::-1].copy()
+            if st.button("💾 변경사항 구글 시트에 저장하기", type="primary", use_container_width=True):
+                # 저장용 데이터프레임 정리
+                final_df = edited_m.iloc[::-1].copy()
                 for col in date_cols:
-                    if col in final_df.columns:
-                        final_df[col] = final_df[col].apply(lambda x: x.strftime('%Y-%m-%d') if pd.notnull(x) and hasattr(x, 'strftime') else "-")
+                    final_df[col] = final_df[col].apply(lambda x: x.strftime('%Y-%m-%d') if pd.notnull(x) and hasattr(x, 'strftime') else "-")
                 
                 ws_schedule.clear()
                 ws_schedule.update([final_df.columns.values.tolist()] + final_df.values.tolist())
-                st.success("✅ 변경사항이 구글 시트에 저장되었습니다!")
-                time.sleep(1)
+                st.success("✅ 데이터가 안전하게 저장되었습니다!")
+                tm.sleep(1) # 'time' 대신 'tm' 사용 확인!
                 st.rerun()
 
-elif menu == "📖 마스터 가이드":
-    st.title("📖 미생물 시험 마스터 가이드")
+elif menu == "📖 항목 마스터 리스트":
+    st.title("📖 미생물 시험 가이드")
     st.info("💡 필터를 선택하지 않으면 전체 목록이 나타납니다.")
 
     # 1. 데이터 구성 (기존 데이터 유지)
