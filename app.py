@@ -41,7 +41,7 @@ doc = client.open_by_url(SHEET_URL)
 
 ws_process = doc.worksheet("공정기록")
 ws_schedule = doc.worksheet("시험일정")
-ws_master = sh.worksheet("Master") # 마스터 리스트가 들어있는 탭 이름
+ws_master = doc.worksheet("Master") # 마스터 리스트가 들어있는 탭 이름
 ws_guestbook = doc.worksheet("방명록")
 
 # =========================================================================
