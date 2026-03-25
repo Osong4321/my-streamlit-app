@@ -235,54 +235,60 @@ elif menu == "📊 대시보드 (Dashboard)":
                 st.error(f"일정표를 구성하는 중 오류가 발생했습니다: {e}")
                 
 elif menu == "📅 시험 일정 관리":
-    st.title("📅 시험 일정 자동 계산 및 기록 (16열 시스템)")
+    st.title("📅 시험 일정 자동 계산 및 기록")
 
-    # [마스터 데이터 정의 - 가이드 탭과 동일하게 유지]
-    df_master_raw = load_data(ws_master) # 구글 시트 로드
+    # 1. 마스터 데이터 실시간 로드 (doc.worksheet("Master") 연결 확인!)
+    df_master_raw = load_data(ws_master)
     if df_master_raw.empty:
-        st.error("❌ Master 시트에 데이터가 없습니다. 시트를 확인해주세요!")
+        st.error("❌ Master 시트에 데이터가 없습니다!")
         st.stop()
     
-    # 데이터 정리 (공백 제거 등)
     df_master = df_master_raw.copy()
     df_master.columns = [c.strip() for c in df_master.columns]
 
     col1, col2 = st.columns(2)
     with col1:
-        # 3번 메뉴: 이제 df_master는 구글 시트에서 가져온 데이터입니다!
-        sample_options = ["선택해주세요"] + sorted(df_master["검체명"].unique().tolist())
-        sample_type = st.selectbox("1. 시험검체를 선택하세요", sample_options)
+        batch_no = st.text_input("1. Batch No.를 입력하세요", placeholder="예: LP24001")
+        tester = st.text_input("2. 시험자를 입력하세요", placeholder="예: 홍길동")
         
-        # 마스터 데이터 연동 (검체 선택 시 품목코드, 구분 자동 추출)
-        if sample_type != "선택해주세요":
+        # ⭐ [1단계 필터] 구분(Category) 먼저 선택
+        cat_options = ["선택해주세요"] + sorted(df_master["구분"].unique().tolist())
+        selected_cat = st.selectbox("3. 구분을 먼저 선택하세요", cat_options)
+        
+        # ⭐ [2단계 필터] 선택된 구분에 속하는 검체들만 추출
+        if selected_cat != "선택해주세요":
+            filtered_samples = df_master[df_master["구분"] == selected_cat]
+            sample_options = ["선택해주세요"] + sorted(filtered_samples["검체명"].unique().tolist())
+        else:
+            sample_options = ["구분을 먼저 선택하세요"]
+            
+        sample_type = st.selectbox("4. 시험검체를 선택하세요", sample_options)
+        
+        # 검체까지 선택 완료 시 마스터 정보 확정
+        if sample_type != "선택해주세요" and sample_type != "구분을 먼저 선택하세요":
             target_row = df_master[df_master["검체명"] == sample_type].iloc[0]
-            current_cat = target_row["구분"]
             current_code = target_row["품목코드"]
             current_spec = target_row["특정미생물"]
             
-            # 🆕 시점(Point) 처리
+            # 시험 항목 및 시점(Point) 연동
             point_options = ["-"]
-            if current_cat == "안정성":
+            if selected_cat == "안정성":
                 point_options = [p.strip() + "M" for p in str(target_row["주기"]).split(',')]
             
-            # 시험 항목 리스트 생성
             base_tests = [t.strip() for t in str(target_row["필수시험"]).split(',')]
             if sample_type == "기타(직접 입력)":
                 base_tests = ["Sterility", "MLT", "endotoxin", "GPT", "직접 입력"]
         else:
-            current_cat, current_code, current_spec = "-", "-", "-"
+            current_code, current_spec = "-", "-"
             point_options = ["-"]
             base_tests = ["검체를 먼저 선택하세요"]
 
-        batch_no = st.text_input("2. Batch No.를 입력하세요", placeholder="예: LP24001")
-        tester = st.text_input("3. 시험자를 입력하세요", placeholder="예: 홍길동")
-        
         # 🆕 시점 및 특정미생물 확인
         c1, c2 = st.columns(2)
-        with c1: point = st.selectbox("4. 시험 시점", point_options)
-        with c2: test_item = st.selectbox("5. 시험항목", base_tests)
+        with c1: point = st.selectbox("5. 시험 시점", point_options)
+        with c2: test_item = st.selectbox("6. 시험항목", base_tests)
         
-        status = st.selectbox("6. 진행 여부", ["대기 중", "진행 중", "완료", "보류"])
+        status = st.selectbox("7. 진행 여부", ["대기 중", "진행 중", "완료", "보류"])
 
     with col2:
         # 7~10번 입력 및 계산
