@@ -237,7 +237,7 @@ elif menu == "📊 대시보드 (Dashboard)":
 elif menu == "📅 시험 일정 관리":
     st.title("📅 시험 일정 자동 계산 및 기록")
 
-    # 1. 마스터 데이터 실시간 로드 (doc.worksheet("Master") 연결 확인!)
+    # [1] 마스터 데이터 실시간 로드
     df_master_raw = load_data(ws_master)
     if df_master_raw.empty:
         st.error("❌ Master 시트에 데이터가 없습니다!")
@@ -246,67 +246,74 @@ elif menu == "📅 시험 일정 관리":
     df_master = df_master_raw.copy()
     df_master.columns = [c.strip() for c in df_master.columns]
 
+    # ⭐ [핵심] 에러 방지를 위해 변수 초기화 (default값 설정)
+    current_cat = "-"
+    current_code = "-"
+    current_spec = "-"
+    point = "-"
+    base_tests = ["검체를 먼저 선택하세요"]
+
     col1, col2 = st.columns(2)
     with col1:
-        batch_no = st.text_input("1. Batch No.를 입력하세요", placeholder="예: LP24001")
-        tester = st.text_input("2. 시험자를 입력하세요", placeholder="예: 홍길동")
-        
-        # ⭐ [1단계 필터] 구분(Category) 먼저 선택
+        # 1. 구분 선택
         cat_options = ["선택해주세요"] + sorted(df_master["구분"].unique().tolist())
-        selected_cat = st.selectbox("3. 구분을 먼저 선택하세요", cat_options)
+        selected_cat = st.selectbox("1. 구분을 선택하세요", cat_options)
         
-        # ⭐ [2단계 필터] 선택된 구분에 속하는 검체들만 추출
+        # 2. 시험검체 선택 (구분에 따라 필터링)
         if selected_cat != "선택해주세요":
             filtered_samples = df_master[df_master["구분"] == selected_cat]
             sample_options = ["선택해주세요"] + sorted(filtered_samples["검체명"].unique().tolist())
         else:
             sample_options = ["구분을 먼저 선택하세요"]
-            
-        sample_type = st.selectbox("4. 시험검체를 선택하세요", sample_options)
-        
-        # 검체까지 선택 완료 시 마스터 정보 확정
-        if sample_type != "선택해주세요" and sample_type != "구분을 먼저 선택하세요":
+        sample_type = st.selectbox("2. 시험검체를 선택하세요", sample_options)
+
+        # 검체 선택 시 관련 정보 할당
+        if sample_type not in ["선택해주세요", "구분을 먼저 선택하세요"]:
             target_row = df_master[df_master["검체명"] == sample_type].iloc[0]
+            current_cat = selected_cat
             current_code = target_row["품목코드"]
             current_spec = target_row["특정미생물"]
-            
-            # 시험 항목 및 시점(Point) 연동
-            point_options = ["-"]
-            if selected_cat == "안정성":
-                point_options = [p.strip() + "M" for p in str(target_row["주기"]).split(',')]
-            
             base_tests = [t.strip() for t in str(target_row["필수시험"]).split(',')]
+            
+            # 기타 직접 입력 예외 처리
             if sample_type == "기타(직접 입력)":
                 base_tests = ["Sterility", "MLT", "endotoxin", "GPT", "직접 입력"]
-        else:
-            current_code, current_spec = "-", "-"
-            point_options = ["-"]
-            base_tests = ["검체를 먼저 선택하세요"]
 
-        # 🆕 시점 및 특정미생물 확인
-        c1, c2 = st.columns(2)
-        with c1: point = st.selectbox("5. 시험 시점", point_options)
-        with c2: test_item = st.selectbox("6. 시험항목", base_tests)
+        # 3. Batch No. 입력
+        batch_no = st.text_input("3. Batch No.를 입력하세요", placeholder="예: LP24001")
         
-        status = st.selectbox("7. 진행 여부", ["대기 중", "진행 중", "완료", "보류"])
+        # 4. 시험자 입력
+        tester = st.text_input("4. 시험자를 입력하세요", placeholder="예: 홍길동")
+        
+        # 5. 시점 선택 (⭐ 안정성일 때만 나타남!)
+        if selected_cat == "안정성" and sample_type not in ["선택해주세요", "구분을 먼저 선택하세요"]:
+            target_row = df_master[df_master["검체명"] == sample_type].iloc[0]
+            point_options = [p.strip() + "M" for p in str(target_row["주기"]).split(',')]
+            point = st.selectbox("5. 시험 시점 (Stability Point)", point_options)
+        else:
+            point = "-" # 일반 시험은 시점 없음
 
     with col2:
-        # 7~10번 입력 및 계산
-        instruction_date = st.date_input("7. 시험지시일")
+        # 6. 시험항목 및 진행여부
+        test_item = st.selectbox("6. 시험항목을 선택하세요", base_tests)
+        status = st.selectbox("7. 진행 여부", ["대기 중", "진행 중", "완료", "보류"])
+        
+        # 8~10. 날짜 입력
+        instruction_date = st.date_input("8. 시험지시일")
         is_pending = status in ["대기 중", "보류"]
-        test_date = st.date_input("8. 시험시작일", disabled=is_pending)
-        deadline_date = st.date_input("9. 마감 기한")
+        test_date = st.date_input("9. 시험시작일", disabled=is_pending)
+        deadline_date = st.date_input("10. 마감 기한")
         
         add_incubation = st.checkbox("➕ 추가 배양(4일 연장)") if "Sterility" in test_item else False
         
-        # 날짜 계산 로직
-        if sample_type != "선택해주세요":
+        # [날짜 및 QCT 계산 엔진]
+        if sample_type not in ["선택해주세요", "구분을 먼저 선택하세요"]:
             days = 0
             if "Sterility" in test_item: days = 18 if add_incubation else 14
             elif "MLT" in test_item: days = 7
             
             if is_pending:
-                end_date_str, qct_days, color, time_status = "미정", 0, "#FF4B4B", f"{status} 🔴"
+                end_date_str, qct_days, color, time_status = "미정", 0, "#888888", f"{status} 🟡"
                 save_start, save_end = "-", "-"
             else:
                 end_date = test_date + timedelta(days=days)
@@ -316,7 +323,7 @@ elif menu == "📅 시험 일정 관리":
                 color = "#FF4B4B" if end_date > deadline_date else "#00CC96"
                 save_start, save_end = test_date.strftime('%Y-%m-%d'), end_date_str
 
-            # 안내 박스
+            # 📊 [안내 박스] - 이제 에러 나지 않습니다!
             st.markdown(f"""
                 <div style='background-color: #f0f2f6; padding: 15px; border-radius: 10px; border-left: 5px solid {color};'>
                     <p style='margin:0;'>📊 <b>구분:</b> {current_cat} | <b>코드:</b> {current_code}</p>
@@ -325,17 +332,19 @@ elif menu == "📅 시험 일정 관리":
                 </div>
             """, unsafe_allow_html=True)
 
-            if st.button("💾 16열 데이터로 저장하기", use_container_width=True):
-                save_schedule(
-                    current_cat, current_code, batch_no, tester, sample_type, point, test_item, current_spec,
-                    status, instruction_date.strftime('%Y-%m-%d'), save_start,
-                    "O" if add_incubation else "X", save_end,
-                    deadline_date.strftime('%Y-%m-%d'), time_status, qct_days
-                )
-                st.success("✅ 마스터 연동 데이터가 저장되었습니다!")
-                tm.sleep(1); st.rerun()
-
-# ---------------------------------------------------------
+            if st.button("💾 16열 통합 데이터 저장", use_container_width=True):
+                if batch_no.strip() and tester.strip():
+                    save_schedule(
+                        current_cat, current_code, batch_no.strip(), tester.strip(), sample_type, point, test_item, current_spec,
+                        status, instruction_date.strftime('%Y-%m-%d'), save_start,
+                        "O" if add_incubation else "X", save_end,
+                        deadline_date.strftime('%Y-%m-%d'), time_status, qct_days
+                    )
+                    st.success("✅ 성공적으로 기록되었습니다!")
+                    tm.sleep(1); st.rerun()
+                else:
+                    st.warning("⚠️ 배치번호와 시험자를 입력해주세요.")
+    # ---------------------------------------------------------
     # [시작점] 여기서부터 교체하세요!
     # ---------------------------------------------------------
     st.divider()
