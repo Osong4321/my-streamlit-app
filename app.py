@@ -41,6 +41,7 @@ doc = client.open_by_url(SHEET_URL)
 
 ws_process = doc.worksheet("공정기록")
 ws_schedule = doc.worksheet("시험일정")
+ws_master = sh.worksheet("Master") # 마스터 리스트가 들어있는 탭 이름
 ws_guestbook = doc.worksheet("방명록")
 
 # =========================================================================
@@ -237,19 +238,18 @@ elif menu == "📅 시험 일정 관리":
     st.title("📅 시험 일정 자동 계산 및 기록 (16열 시스템)")
 
     # [마스터 데이터 정의 - 가이드 탭과 동일하게 유지]
-    master_data_list = [
-        ["원료", "폴리(디엘-락티드)", "02A1001191", "MLT, endotoxin", "-", "-"],
-        ["원료", "세마글루티드", "3300311", "MLT, endotoxin", "-", "E.coli"],
-        ["자재", "LEU Syringe 104mm(블루)", "2303718", "Sterility", "-", "-"],
-        ["제품", "루피어데포주 3.75mg 완제", "9000226", "Sterility", "-", "-"],
-        ["안정성", "루피어데포주(시판후)", "9000226", "Sterility", "0, 12, 18, 24", "-"],
-        ["기타", "기타(직접 입력)", "-", "Sterility, MLT, endotoxin", "-", "-"]
-    ]
-    df_master = pd.DataFrame(master_data_list, columns=["구분", "검체명", "품목코드", "필수시험", "주기", "특정미생물"])
+    df_master_raw = load_data(ws_master) # 구글 시트 로드
+    if df_master_raw.empty:
+        st.error("❌ Master 시트에 데이터가 없습니다. 시트를 확인해주세요!")
+        st.stop()
+    
+    # 데이터 정리 (공백 제거 등)
+    df_master = df_master_raw.copy()
+    df_master.columns = [c.strip() for c in df_master.columns]
 
     col1, col2 = st.columns(2)
     with col1:
-        # 1~5번 입력
+        # 3번 메뉴: 이제 df_master는 구글 시트에서 가져온 데이터입니다!
         sample_options = ["선택해주세요"] + sorted(df_master["검체명"].unique().tolist())
         sample_type = st.selectbox("1. 시험검체를 선택하세요", sample_options)
         
