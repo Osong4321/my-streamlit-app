@@ -173,14 +173,16 @@ elif menu == "📊 대시보드 (Dashboard)":
     df_schedule = load_data(ws_schedule)
     
     if not df_schedule.empty:
+        df_schedule.columns = [c.strip() for c in df_schedule.columns]
         # 날짜 형식 변환 및 필터링 준비
+        df_schedule['Inst'] = pd.to_datetime(df_schedule['시험지시일'], errors='coerce')
         df_schedule['Start'] = pd.to_datetime(df_schedule['시험시작일'], errors='coerce')
         df_schedule['End'] = pd.to_datetime(df_schedule['예상종료일'], errors='coerce')
         df_schedule['Deadline'] = pd.to_datetime(df_schedule['마감기한'], errors='coerce')
         
         # [핵심] 선택한 날짜 범위 내의 데이터만 필터링
         # 시작일이 조회종료일보다 작고, 종료일이 조회시작일보다 큰 데이터 (기간 중첩)
-        mask = (df_schedule['Start'].dt.date <= end_date) & (df_schedule['End'].dt.date >= start_date)
+        mask = (df_schedule['Inst'].dt.date <= end_date) & (df_schedule['Inst'].dt.date >= start_date)
         display_df = df_schedule[mask].copy()
 
         # Batch No. 검색 필터 적용
@@ -205,49 +207,82 @@ elif menu == "📊 대시보드 (Dashboard)":
         if display_df.empty:
             st.info("📊 선택한 기간 내에 해당하는 시험 일정이 없습니다.")
         else:
-            # 5. 그리드 차트 생성 로직
+    # 5. 그리드 차트 생성 로직
             try:
                 date_range = pd.date_range(start=start_date, end=end_date)
                 date_strs = [d.strftime('%m/%d') for d in date_range] 
                 grid_data = []
                 
                 for idx, row in display_df.iterrows():
-                    display_name = f"{row['Batch No.']} ({row['시험항목']})"
+                    # 1. 한 줄을 시작할 때 아이콘과 이름 설정
+                    icon = "⚠️" if row['진행여부'] == "보류" else "⚪" if row['진행여부'] == "대기 중" else "🟢"
+                    display_name = f"{icon} {row['Batch No.']} ({row['시험항목']})"
                     row_data = {'시험 정보': display_name}
+                    
+                    # ⭐ [중요] 이 줄에 데이터가 하나라도 있는지 확인하는 플래그
                     is_empty_row = True 
                     
+                    # 2. 날짜별로 칸 채우기
                     for d_idx, single_date in enumerate(date_range):
                         date_str = date_strs[d_idx]
                         cell_val = ""
                         curr_d = single_date.date()
                         
-                        # 마감 표시
+                        # [조건 1] 마감기한 표시
                         if pd.notna(row['Deadline']) and curr_d == row['Deadline'].date():
                             cell_val = "마감"
+                            is_empty_row = False # 데이터가 있으니 표시함
+                        
+                        # [조건 2] 지시일 표시
+                        elif pd.notna(row['Inst']) and curr_d == row['Inst'].date():
+                            cell_val = "지시"
                             is_empty_row = False
-                        # 진행 기간 표시
-                        elif pd.notna(row['Start']) and pd.notna(row['End']) and row['Start'].date() <= curr_d <= row['End'].date():
-                            cell_val = f"진행_{row['시험항목']}"
-                            is_empty_row = False
-                            
+                        
+                        # [조건 3] 진행 기간 표시 (시작/종료일이 둘 다 있을 때)
+                        elif pd.notna(row['Start']) and pd.notna(row['End']):
+                            if row['Start'].date() <= curr_d <= row['End'].date():
+                                cell_val = "보류" if row['진행여부'] == "보류" else f"진행_{row['시험항목']}"
+                                is_empty_row = False
+                        
+                        # 해당 날짜 칸에 값 입력
                         row_data[date_str] = cell_val
                     
+                    # 3. 날짜 루프가 끝난 후, 데이터가 하나라도 있는 행만 추가
                     if not is_empty_row:
                         grid_data.append(row_data)
                 
                 if grid_data:
                     grid_df = pd.DataFrame(grid_data).set_index('시험 정보')
                     
-                    def color_cells(val):
-                        if "진행_무균시험" in val: return 'background-color: #FFFF00; color: #FFFF00;'
-                        elif "진행_엔도톡신" in val: return 'background-color: #C1E1C1; color: #C1E1C1;'
-                        elif "진행" in val: return 'background-color: #E0E0E0; color: #E0E0E0;'
-                        elif val == "마감": return 'background-color: #FF4B4B; color: #FFFFFF; font-weight: bold; text-align: center;' 
-                        return ''
+                def color_cells(val):
+                    # 1. 보류 상태 (최우선순위)
+                    if val == "보류": 
+                        return 'background-color: #FFA500; color: #FFFFFF; font-weight: bold;' # 주황색
                     
-                    styled_grid = grid_df.style.map(color_cells)
-                    st.dataframe(styled_grid, use_container_width=True)
-                    st.caption("🟡 노란색: 무균시험 | 🟢 연한 초록색: 엔도톡신시험 | 🔴 빨간색: 마감기한")
+                    # 2. 시험 항목별 색상 (영문 명칭 매칭)
+                    elif "Sterility" in val: 
+                        return 'background-color: #FFFF00; color: #000000;' # 노란색 (무균)
+                    elif "endotoxin" in val: 
+                        return 'background-color: #C1E1C1; color: #000000;' # 연한 초록 (엔도)
+                    elif "MLT" in val: 
+                        return 'background-color: #ADD8E6; color: #000000;' # 연한 하늘색 (MLT)
+                    
+                    # 3. 기타 진행 및 특수 상태
+                    elif "진행" in val: 
+                        return 'background-color: #E0E0E0; color: #000000;' # 일반 회색
+                    elif val == "마감": 
+                        return 'background-color: #FF4B4B; color: #FFFFFF; font-weight: bold;' # 빨간색
+                    elif val == "지시": 
+                        return 'background-color: #FFFFFF; border: 2px solid #31333F; color: #31333F; font-weight: bold;' # 흰색(테두리)
+                    
+                    return ''
+
+                # --- [표 출력 및 하단 안내] ---
+                styled_grid = grid_df.style.map(color_cells)
+                st.dataframe(styled_grid, use_container_width=True)
+                
+                # 캡션도 실제 항목명으로 변경
+                st.caption("⚪ 지시 | 🟡 Sterility | 🟢 endotoxin | 🔵 MLT | 🟠 보류 | 🔴 마감기한")
             
             except Exception as e:
                 st.error(f"일정표를 구성하는 중 오류가 발생했습니다: {e}")
