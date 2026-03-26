@@ -214,45 +214,42 @@ elif menu == "📊 대시보드 (Dashboard)":
                 grid_data = []
                 
                 for idx, row in display_df.iterrows():
-                    # 1. 한 줄을 시작할 때 아이콘과 이름 설정
-                    icon = "⚠️" if row['진행여부'] == "보류" else "⚪" if row['진행여부'] == "대기 중" else "🟢"
-                    item_name = row['시험검체'] if '시험검체' in row else "품목명 미정"
-                    display_name = f"{icon} {row['Batch No.']} | {item_name} ({row['시험항목']})"
-                    
-                    # ⭐ [중요] 이 줄에 데이터가 하나라도 있는지 확인하는 플래그
-                    is_empty_row = True 
-                    
-                    # 2. 날짜별로 칸 채우기
-                    for d_idx, single_date in enumerate(date_range):
-                        date_str = date_strs[d_idx]
-                        cell_val = ""
-                        curr_d = single_date.date()
-                        
-                        # [조건 1] 마감기한 표시
-                        if pd.notna(row['Deadline']) and curr_d == row['Deadline'].date():
-                            cell_val = "마감"
-                            is_empty_row = False # 데이터가 있으니 표시함
-                        
-                        # [조건 2] 지시일 표시
-                        elif pd.notna(row['Inst']) and curr_d == row['Inst'].date():
-                            cell_val = "지시"
-                            is_empty_row = False
-                        
-                        # [조건 3] 진행 기간 표시 (시작/종료일이 둘 다 있을 때)
-                        elif pd.notna(row['Start']) and pd.notna(row['End']):
-                            if row['Start'].date() <= curr_d <= row['End'].date():
-                                cell_val = "보류" if row['진행여부'] == "보류" else f"진행_{row['시험항목']}"
-                                is_empty_row = False
-                        
-                        # 해당 날짜 칸에 값 입력
-                        row_data[date_str] = cell_val
-                    
-                    # 3. 날짜 루프가 끝난 후, 데이터가 하나라도 있는 행만 추가
-                    if not is_empty_row:
-                        grid_data.append(row_data)
+                # [이름 구성] 아이콘 + 배치번호 | 품목명 (항목)
+                icon = "⚠️" if row['진행여부'] == "보류" else "⚪" if row['진행여부'] == "대기 중" else "🟢"
+                item_name = row['시험검체'] if '시험검체' in row else "-"
+                display_name = f"{icon} {row['Batch No.']} | {item_name} ({row['시험항목']})"
                 
-                if grid_data:
-                    grid_df = pd.DataFrame(grid_data).set_index('시험 정보')
+                row_data = {'시험 정보': display_name}
+                is_empty_row = True # 행 표시 여부 결정
+                
+                for d_idx, single_date in enumerate(date_range):
+                    date_str = date_strs[d_idx]
+                    cell_val = ""
+                    curr_d = single_date.date()
+                    
+                    # 🚩 마감 표시 (최우선)
+                    if pd.notna(row['Deadline']) and curr_d == row['Deadline'].date():
+                        cell_val = "마감"
+                        is_empty_row = False
+                    
+                    # 🚩 지시일 표시
+                    elif pd.notna(row['Inst']) and curr_d == row['Inst'].date():
+                        cell_val = "지시"
+                        is_empty_row = False
+
+                    # 🚩 진행/보류 기간 표시 (날짜가 있을 때만)
+                    elif pd.notna(row['Start']) and pd.notna(row['End']):
+                        if row['Start'].date() <= curr_d <= row['End'].date():
+                            cell_val = "보류" if row['진행여부'] == "보류" else f"{row['시험항목']}"
+                            is_empty_row = False
+                    
+                    row_data[date_str] = cell_val
+                
+                # 지시일만 있어도 is_empty_row가 False가 되므로 무조건 리스트에 추가됨
+                grid_data.append(row_data) 
+            
+            if grid_data:
+                grid_df = pd.DataFrame(grid_data).set_index('시험 정보')
                     
                 def color_cells(val):
                     # 1. 보류 상태 (최우선순위)
