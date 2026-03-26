@@ -216,8 +216,8 @@ elif menu == "📊 대시보드 (Dashboard)":
                 for idx, row in display_df.iterrows():
                     # 1. 한 줄을 시작할 때 아이콘과 이름 설정
                     icon = "⚠️" if row['진행여부'] == "보류" else "⚪" if row['진행여부'] == "대기 중" else "🟢"
-                    display_name = f"{icon} {row['Batch No.']} ({row['시험항목']})"
-                    row_data = {'시험 정보': display_name}
+                    item_name = row['시험검체'] if '시험검체' in row else "품목명 미정"
+                    display_name = f"{icon} {row['Batch No.']} | {item_name} ({row['시험항목']})"
                     
                     # ⭐ [중요] 이 줄에 데이터가 하나라도 있는지 확인하는 플래그
                     is_empty_row = True 
