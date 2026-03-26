@@ -37,12 +37,25 @@ client = init_connection()
 
 # URL 중복 수정 완료
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1Ejo6Yse0iZjFc2V45yuAVNjw7Bc6VAyqF5aV73iRTng/edit"
-doc = client.open_by_url(SHEET_URL)
 
-ws_process = doc.worksheet("공정기록")
-ws_schedule = doc.worksheet("시험일정")
-ws_master = doc.worksheet("Master") # 마스터 리스트가 들어있는 탭 이름
-ws_guestbook = doc.worksheet("방명록")
+@st.cache_resource # 이 설정을 하면 연결 정보를 메모리에 저장해둡니다.
+def get_gspread_client(url):
+    # 이 함수 안에서만 시트를 열도록 해서 API 호출을 최소화합니다.
+    return client.open_by_url(url)
+
+try:
+    # 이제 doc을 직접 열지 않고 함수를 통해 가져옵니다.
+    doc = get_gspread_client(SHEET_URL)
+    ws_process = doc.worksheet("공정기록")
+    ws_schedule = doc.worksheet("시험일정")
+    ws_master = doc.worksheet("Master")
+    ws_guestbook = doc.worksheet("방명록")
+except Exception as e:
+    st.error(f"🚨 시트 연결 중 오류가 발생했습니다: {e}")
+    # 에러가 나면 5초 뒤에 자동으로 새로고침 시도
+    tm.sleep(5)
+    st.rerun()
+# -------------------------
 
 # =========================================================================
 # 3. 데이터 입출력 함수 (100% 구글 시트 전용)
