@@ -182,8 +182,11 @@ elif menu == "📊 대시보드 (Dashboard)":
         
         # [핵심] 선택한 날짜 범위 내의 데이터만 필터링
         # 시작일이 조회종료일보다 작고, 종료일이 조회시작일보다 큰 데이터 (기간 중첩)
-        mask = (df_schedule['Deadline'].dt.date >= start_date) & \
-               (df_schedule['Deadline'].dt.date <= end_date)
+        mask = (
+            ((df_schedule['Deadline'].dt.date >= start_date) & (df_schedule['Deadline'].dt.date <= end_date)) | 
+            ((df_schedule['Deadline'].dt.date < start_date) & (df_schedule['진행여부'] != "완료"))
+        )
+        
         display_df = df_schedule[mask].copy()
 
         # Batch No. 검색 필터 적용
