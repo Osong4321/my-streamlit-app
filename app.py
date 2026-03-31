@@ -182,7 +182,8 @@ elif menu == "📊 대시보드 (Dashboard)":
         
         # [핵심] 선택한 날짜 범위 내의 데이터만 필터링
         # 시작일이 조회종료일보다 작고, 종료일이 조회시작일보다 큰 데이터 (기간 중첩)
-        mask = (df_schedule['Inst'].dt.date <= end_date) & (df_schedule['Inst'].dt.date >= start_date)
+        mask = (df_schedule['Deadline'].dt.date >= start_date) & \
+               (df_schedule['Deadline'].dt.date <= end_date)
         display_df = df_schedule[mask].copy()
 
         # Batch No. 검색 필터 적용
@@ -196,7 +197,7 @@ elif menu == "📊 대시보드 (Dashboard)":
         done_cnt = len(display_df[display_df['진행여부'] == "완료"])
         over_cnt = len(display_df[display_df['기한상태'].str.contains("초과", na=False)])
         
-        m1.metric("조회 기간 내 시험", f"{total_cnt}건")
+        m1.metric("기간 내 마감 예정", f"{total_cnt}건") 
         m2.metric("진행 중 🟢", f"{ing_cnt}건")
         m3.metric("완료 🔵", f"{done_cnt}건")
         m4.metric("기한 초과 🔴", f"{over_cnt}건")
