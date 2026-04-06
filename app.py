@@ -259,18 +259,30 @@ elif menu == "📊 대시보드 (Dashboard)":
                     grid_df = pd.DataFrame(grid_data).set_index('시험 정보')
                     
                     def color_cells(val):
+                        # 1. 보류 (주황색)
                         if val == "보류": 
                             return 'background-color: #FFA500; color: #FFFFFF; font-weight: bold;'
+                        
+                        # 2. 무균시험 추가배양 (진한 초록색 - 14일 이후)
+                        elif val == "Sterility(추가)": 
+                            return 'background-color: #1B5E20; color: #FFFFFF; font-weight: bold;' 
+                        
+                        # 3. 무균시험 기본배양 (노란색 - 14일 이내)
                         elif "Sterility" in val: 
                             return 'background-color: #FFFF00; color: #000000;'
+                        
+                        # 4. 기타 시험 항목들
                         elif "endotoxin" in val: 
                             return 'background-color: #C1E1C1; color: #000000;'
                         elif "MLT" in val: 
                             return 'background-color: #ADD8E6; color: #000000;'
+                        
+                        # 5. 마감 및 지시
                         elif val == "마감": 
                             return 'background-color: #FF4B4B; color: #FFFFFF; font-weight: bold;'
                         elif val == "지시": 
                             return 'background-color: #FFFFFF; border: 2px solid #31333F; color: #31333F; font-weight: bold;'
+                        
                         return ''
 
                     styled_grid = grid_df.style.map(color_cells)
