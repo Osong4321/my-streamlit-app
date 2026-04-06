@@ -659,9 +659,9 @@ elif menu == "🛠️ 공정별 일정 현황":
     st.title("🛠️ 공정별 통합 일정 현황")
     st.write("---")
 
-    # 1. 📅 실시간 날짜 계산 (기본값: 오늘 ~ 7일 뒤)
+    # 1. 📅 실시간 날짜 계산 (기본값: 오늘 ~ 7일 전)
     today = datetime.now().date()
-    seven_days_later = today + timedelta(days=7)
+    seven_days_ago = today - timedelta(days=7)
 
     # 2. 데이터 미리 로드 (검색 목록 생성용)
     df_p = load_data(ws_process) 
@@ -683,10 +683,10 @@ elif menu == "🛠️ 공정별 일정 현황":
         
         with col_d1:
             # 변수명을 search_start로 통일
-            search_start = st.date_input("조회 시작일", value=today, key="proc_start_date")
+            search_start = st.date_input("조회 시작일", value=seven_days_ago, key="proc_start_date")
         with col_d2:
             # 변수명을 search_end로 통일
-            search_end = st.date_input("조회 종료일", value=seven_days_later, key="proc_end_date")
+            search_end = st.date_input("조회 종료일", value=today, key="proc_end_date")
         with col_search:
             search_batches = st.multiselect(
                 "Batch No. 검색 (비워두면 전체 조회)", 
@@ -706,7 +706,7 @@ elif menu == "🛠️ 공정별 일정 현황":
             
             fixed_processes = [
                 "조제분무", "동결건조", "체과혼합", "약제부충전", 
-                "용제부충전A", "용제부충전B", "용제부충전C"
+                "용제부충전A", "용제부충전B", "용제부충전C", "기타"
             ]
             
             table_rows = []
@@ -724,8 +724,9 @@ elif menu == "🛠️ 공정별 일정 현황":
                     else:
                         target = df_p[(df_p['Batch No.'] == base_batch) & (df_p['공정명'] == proc_display_name)]
                     
-                    # 선택된 기간 내 데이터가 있는지 확인
-                    has_data_in_range = False
+                    # --- [수정 구간: 날짜별 데이터 매핑 및 유효성 검사] ---
+                    has_actual_content = False  # 해당 행에 실제 스케줄 데이터가 있는지 확인하는 플래그
+                    
                     for d in display_dates:
                         col_name = d.strftime('%m/%d')
                         val = ""
@@ -734,16 +735,25 @@ elif menu == "🛠️ 공정별 일정 현황":
                                 try:
                                     s_dt = pd.to_datetime(r['시작시간'])
                                     e_dt = pd.to_datetime(r['종료시간'])
+                                    
+                                    # 선택된 날짜(d)가 시작~종료 범위 내에 있는지 확인
                                     if s_dt.date() <= d <= e_dt.date():
-                                        has_data_in_range = True
-                                        if s_dt.date() == e_dt.date() == d: val = f"{s_dt.strftime('%H:%M')}~{e_dt.strftime('%H:%M')}"
-                                        elif d == s_dt.date(): val = f"{s_dt.strftime('%H:%M')}~"
-                                        elif d == e_dt.date(): val = f"~{e_dt.strftime('%H:%M')}"
-                                        else: val = " " 
+                                        has_actual_content = True  # 유효한 데이터가 하나라도 발견되면 True
+                                        
+                                        if s_dt.date() == e_dt.date() == d: 
+                                            val = f"{s_dt.strftime('%H:%M')}~{e_dt.strftime('%H:%M')}"
+                                        elif d == s_dt.date(): 
+                                            val = f"{s_dt.strftime('%H:%M')}~"
+                                        elif d == e_dt.date(): 
+                                            val = f"~{e_dt.strftime('%H:%M')}"
+                                        else: 
+                                            val = " " 
                                 except: continue
                         row_data[col_name] = val
                     
-                    table_rows.append(row_data)
+                    # 💡 중요: 해당 행에 데이터가 단 하나라도 있을 때만 테이블 리스트에 추가!
+                    if has_actual_content:
+                        table_rows.append(row_data)
 
             # 5. 테이블 출력
             if not table_rows:
