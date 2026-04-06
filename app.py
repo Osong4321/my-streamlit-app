@@ -253,7 +253,7 @@ elif menu == "📊 대시보드 (Dashboard)":
                     def color_cells(val):
                         # 중요: 가장 긴 단어(구체적인 조건)부터 먼저 검사해야 합니다.
                         if val == "Sterility(추가)": 
-                            return 'background-color: #1B5E20; color: #FFFFFF; font-weight: bold;'
+                            return 'background-color: #32CD87; color: #FFFFFF; font-weight: bold;'
                         elif "Sterility" in str(val): 
                             return 'background-color: #FFFF00; color: #000000;'
                         elif "endotoxin" in str(val).lower(): 
