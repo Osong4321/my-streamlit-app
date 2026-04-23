@@ -700,7 +700,7 @@ elif menu == "🛠️ 공정별 일정 현황":
             
             fixed_processes = [
                 "조제분무", "동결건조", "체과혼합", "약제부충전", 
-                "용제부충전A", "용제부충전B", "용제부충전C", "기타"
+                "용제부충전", "용제부충전A", "용제부충전B", "용제부충전C", "기타"
             ]
             
             table_rows = []
@@ -710,12 +710,13 @@ elif menu == "🛠️ 공정별 일정 현황":
                 for proc_display_name in fixed_processes:
                     row_data = {"Batch No.": base_batch, "공정명": proc_display_name}
                     
-                    # 용제부충전 분기 처리
-                    if "용제부충전" in proc_display_name:
+                    # 수정된 용제부충전 분기 처리: A, B, C가 정확히 붙어있을 때만 suffix 로직 실행
+                    if proc_display_name in ["용제부충전A", "용제부충전B", "용제부충전C"]:
                         suffix = proc_display_name.replace("용제부충전", "")
                         stored_batch_no = base_batch + suffix
                         target = df_p[(df_p['Batch No.'] == stored_batch_no) & (df_p['공정명'] == "용제부충전")]
                     else:
+                        # "용제부충전"(기본)을 포함한 나머지 모든 공정은 여기서 처리됨
                         target = df_p[(df_p['Batch No.'] == base_batch) & (df_p['공정명'] == proc_display_name)]
                     
                     # --- [수정 구간: 날짜별 데이터 매핑 및 유효성 검사] ---
