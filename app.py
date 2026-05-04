@@ -581,7 +581,7 @@ elif menu == "📝 공정 기록 등록":
             col1, col2 = st.columns(2)
             with col1:
                 proc_batch = st.text_input("Batch No.", placeholder="예: LP24001")
-                proc_name = st.selectbox("공정 선택", ["조제분무", "동결건조", "체과혼합", "약제부충전", "용제부충전", "기타"])
+                proc_name = st.selectbox("공정 선택", ["조제분무", "동결건조", "체과혼합", "약제부충전", "용제부충전", "DCS충전", "기타"])
             
             st.write("---")
             hours = [f"{i:02d}" for i in range(24)]
@@ -630,7 +630,7 @@ elif menu == "📝 공정 기록 등록":
                 key="process_editor",
                 column_config={
                     "Batch No.": st.column_config.TextColumn("Batch No.", required=True),
-                    "공정명": st.column_config.SelectboxColumn("공정명", options=["조제분무", "동결건조", "체과혼합", "약제부충전", "용제부충전", "기타"], required=True),
+                    "공정명": st.column_config.SelectboxColumn("공정명", options=["조제분무", "동결건조", "체과혼합", "약제부충전", "용제부충전", "DCS충전", "기타"], required=True),
                     "시작시간": st.column_config.TextColumn("시작시간 (YYYY-MM-DD HH:MM)"),
                     "종료시간": st.column_config.TextColumn("종료시간 (YYYY-MM-DD HH:MM)"),
                 }
@@ -699,7 +699,7 @@ elif menu == "🛠️ 공정별 일정 현황":
             target_base_batches = search_batches if search_batches else all_unique_bases
             
             fixed_processes = [
-                "조제분무", "동결건조", "체과혼합", "약제부충전", 
+                "조제분무", "동결건조", "체과혼합", "약제부충전", "DCS충전", 
                 "용제부충전", "용제부충전A", "용제부충전B", "용제부충전C", "기타"
             ]
             
